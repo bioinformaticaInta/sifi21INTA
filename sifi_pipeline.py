@@ -12,7 +12,7 @@ import general_helpers
 
 
 class SifiPipeline(object):
-    def __init__(self, bowtie_db, db_location, query_sequences, mode=0, sirna_size=21, mismatches=0, accessibility_check=True,
+    def __init__(self, bowtie_db, query_sequences, mode=0, sirna_size=21, mismatches=0, accessibility_check=True,
                  accessibility_window=8, strand_check=True, end_check=True, end_stability_treshold = 1.0, 
                  target_site_accessibility_treshold=0.1, terminal_check=True):
 
@@ -37,11 +37,10 @@ class SifiPipeline(object):
         self.bowtie_location = "/usr/bin"                                         # Bowtie path
         self.temp_location = "/home/sgonzalez/sifi21/tmp"                         # Temp location
 
-        self.bowtie_db = bowtie_db                                                # Bowtie DB
-        self.query_sequences = query_sequences                                    # List of all query sequences in multi fasta format
+        self.bowtie_db = bowtie_db                                                # Bowtie DB complete path
+        self.query_sequences = query_sequences                                    # Query sequences in multi fasta format complete path
         self.sirna_size = sirna_size                                              # siRNA size
         self.mismatches = mismatches                                              # Allowed mismatches
-        self.db_location = db_location                                            # DB path
         self.mode = mode                                                          # Mode, either RNAi design or off-target prediction
 
         self.strand_check = strand_check                                          # Strand selection is enabled or disabled
@@ -304,8 +303,7 @@ class SifiPipeline(object):
         temp_bowtie_file = tempfile.mkstemp()
         os.chdir(self.bowtie_location)
         process = subprocess.Popen(["bowtie", "-a", "-v", str(mismatches),  "-y",
-                                    self.db_location + "/" + database_name, "-f",
-                                    sequence, temp_bowtie_file[1]])
+                                    database_name, "-f", sequence, temp_bowtie_file[1]])
         process.wait()
 
         if os.path.exists(temp_bowtie_file[1]):
