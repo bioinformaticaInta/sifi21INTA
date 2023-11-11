@@ -12,8 +12,8 @@ import general_helpers
 
 
 class SifiPipeline(object):
-    def __init__(self, bowtie_db, db_location, query_sequences, sirna_size=21, mismatches=0, accessibility_check=True,
-                 accessibility_window=8, mode=1, strand_check=True, end_check=True, end_stability_treshold = 1.0, 
+    def __init__(self, bowtie_db, db_location, query_sequences, mode=0, sirna_size=21, mismatches=0, accessibility_check=True,
+                 accessibility_window=8, strand_check=True, end_check=True, end_stability_treshold = 1.0, 
                  target_site_accessibility_treshold=0.1, terminal_check=True):
 
         """Class for si-Fi pipeline:
