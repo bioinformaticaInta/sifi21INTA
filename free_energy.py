@@ -21,6 +21,8 @@ from Bio import BiopythonWarning
 # of dH (kcal/mol), dS (cal/mol K).
 # RNA/RNA
  # Freier et al. (1986), Proc Natl Acad Sci USA 83: 9373-9377
+ # Datos de entropia y entalpia sacados de este paper en relacion a los parametros termodinamicos de los RNA duplex en la iniciacion y propagacion de los pares
+ # No se porque solo tiene 10, de todas maneras no vuelve a usarse esta variable.
 RNA_NN1 = {
        'init': (0, -10.8), 'init_A/T': (0, 0), 'init_G/C': (0, 0),
       'init_oneG/C': (0, 0), 'init_allA/T': (0, 0), 'init_5T/A': (0, 0),
@@ -56,6 +58,20 @@ RNA_NN3 = {
     'AT/TG': (-7.39, -21.0), 'CG/GT': (-5.56, -13.9), 'CT/GG': (-9.44, -24.7),
     'GG/CT': (-7.03, -16.8), 'GT/CG': (-11.09, -28.8)}
 
+# Zuber et al. (2022), Nucleic Acids Research, 2022, Vol. 50, No. 9 5251–5262
+RNA_NN4 = {
+    'init': (4.66, 1.78), 'init_A/T': (4.36, 13.35), 'init_G/C': (0, 0),
+    'init_oneG/C': (0, 0), 'init_allA/T': (0, 0), 'init_5T/A': (0, 0),
+    'sym': (0, -1.38),
+    'AA/TT': (-7.44, -20.98), 'AT/TA': (-8.91, -25.22), 'TA/AT': (-9.16, -25.4),
+    'CA/GT': (-10.47, -27.08), 'GT/CA': (-11.98, -31.37),    
+    'CT/GA': (-10.90, -28.5), 'GA/CT': (-13.21, -34.9),
+    'CG/GC': (-9.61, -23.46), 'GC/CG': (-16.52, -42.13),
+    'GG/CC': (-13.94, -34.41), 'GT/TG': (-7.66, -24.11),
+    'GG/TT': (-9.06, -28.57), 'AG/TT': (-5.1, -16.53),
+    'TG/AT': (-2.72, -8.08), 'TT/AG': (-10.58, -32.19), 'TG/GT': (-8.76, -27.04),
+    'AT/TG': (-9.23, -27.32), 'CG/GT': (-5.64, -14.83), 'CT/GG': (-9.26, -23.64),
+    'GG/CT': (-12.41, -34.23), 'GT/CG': (-14.73, -40.32)}
 
 # Internal mismatch and inosine table (DNA)
 # Allawi & SantaLucia (1997), Biochemistry 36: 10581-10594
@@ -65,25 +81,37 @@ RNA_NN3 = {
 # Peyret et al. (1999), Biochemistry 38: 3468-3477
 # Watkins & SantaLucia (2005), Nucl Acids Res 33: 6258-6267
 DNA_IMM1 = {
+# Allawi & SantaLucia (1997), Biochemistry 36: 10581-10594
+# Internal G‚T Mismatches in DNA
     'AG/TT': (1.0, 0.9), 'AT/TG': (-2.5, -8.3), 'CG/GT': (-4.1, -11.7),
     'CT/GG': (-2.8, -8.0), 'GG/CT': (3.3, 10.4), 'GG/TT': (5.8, 16.3),
     'GT/CG': (-4.4, -12.3), 'GT/TG': (4.1, 9.5), 'TG/AT': (-0.1, -1.7),
-    'TG/GT': (-1.4, -6.2), 'TT/AG': (-1.3, -5.3), 'AA/TG': (-0.6, -2.3),
-    'AG/TA': (-0.7, -2.3), 'CA/GG': (-0.7, -2.3), 'CG/GA': (-4.0, -13.2),
-    'GA/CG': (-0.6, -1.0), 'GG/CA': (0.5, 3.2), 'TA/AG': (0.7, 0.7),
-    'TG/AA': (3.0, 7.4),
+    'TG/GT': (-1.4, -6.2), 'TT/AG': (-1.3, -5.3), 
+# Allawi & SantaLucia (1998), Biochemistry 37: 2170-2179
+# Internal G‚A Mismatches in DNA
+    'AA/TG': (-0.6, -2.3), 'AG/TA': (-0.7, -2.3), 'CA/GG': (-0.7, -2.3),
+    'CG/GA': (-4.0, -13.2), 'GA/CG': (-0.6, -1.0), 'GG/CA': (0.5, 3.2),
+    'TA/AG': (0.7, 0.7), 'TG/AA': (3.0, 7.4),
+# Allawi & SantaLucia (1998), Nucl Acids Res 26: 2694-2701
+# Internal C,T mismatches in DNA
     'AC/TT': (0.7, 0.2), 'AT/TC': (-1.2, -6.2), 'CC/GT': (-0.8, -4.5),
     'CT/GC': (-1.5, -6.1), 'GC/CT': (2.3, 5.4), 'GT/CC': (5.2, 13.5),
     'TC/AT': (1.2, 0.7), 'TT/AC': (1.0, 0.7),
+# Allawi & SantaLucia (1998), Biochemistry 37: 9435-9444   
+# Internal A‚C Mismatches in DNA 
     'AA/TC': (2.3, 4.6), 'AC/TA': (5.3, 14.6), 'CA/GC': (1.9, 3.7),
     'CC/GA': (0.6, -0.6), 'GA/CC': (5.2, 14.2), 'GC/CA': (-0.7, -3.8),
     'TA/AC': (3.4, 8.0), 'TC/AA': (7.6, 20.2),
+# Peyret et al. (1999), Biochemistry 38: 3468-3477
+# Internal A‚A, C‚C, G‚G, and T‚T Mismatches in DNA    
     'AA/TA': (1.2, 1.7), 'CA/GA': (-0.9, -4.2), 'GA/CA': (-2.9, -9.8),
     'TA/AA': (4.7, 12.9), 'AC/TC': (0.0, -4.4), 'CC/GC': (-1.5, -7.2),
     'GC/CC': (3.6, 8.9), 'TC/AC': (6.1, 16.4), 'AG/TG': (-3.1, -9.5),
     'CG/GG': (-4.9, -15.3), 'GG/CG': (-6.0, -15.8), 'TG/AG': (1.6, 3.6),
     'AT/TT': (-2.7, -10.8), 'CT/GT': (-5.0, -15.8), 'GT/CT': (-2.2, -8.4),
     'TT/AT': (0.2, -1.5),
+# Watkins & SantaLucia (2005), Nucl Acids Res 33: 6258-6267
+# Deoxyinosine pais in DNA duplexes (I·C, I·A, I·T, I·G and I·I adjacent to G·C and A·T pairs)
     'AI/TC': (-8.9, -25.5), 'TI/AC': (-5.9, -17.4), 'AC/TI': (-8.8, -25.4),
     'TC/AI': (-4.9, -13.9), 'CI/GC': (-5.4, -13.7), 'GI/CC': (-6.8, -19.1),
     'CC/GI': (-8.3, -23.8), 'GC/CI': (-5.0, -12.6),
@@ -275,12 +303,11 @@ def salt_correction(Na=0, K=0, Tris=0, Mg=0, dNTPs=0, method=1, seq=None):
     return corr
 
 
-def calculate_free_energy(seq, check=True, strict=True, c_seq=None, shift=0, nn_table=RNA_NN3,
+def calculate_free_energy(seq, check=True, strict=True, c_seq=None, shift=0, nn_table=RNA_NN4,
           tmm_table=DNA_TMM1, imm_table=DNA_IMM1, de_table=RNA_DE2,
           dnac1=25, dnac2=0, selfcomp=False, Na=20, K=50, Tris=0, Mg=0,
           dNTPs=0, saltcorr=5):
     """Return the delatG using nearest neighbor thermodynamics."""
-    #print shift
     seq = str(seq)
     if not c_seq:
         # c_seq must be provided by user if dangling ends or mismatches should
