@@ -14,6 +14,6 @@ For off target search:
 
 ```
 import sifi21INTA
-sifiDesign = sifi21INTA.SifiPipeline(bowtie_db=<complete_path>,query_sequences=<complete_path>, mode=1)
-sifiDesign.run_pipeline
+sifiOffTargets = sifi21INTA.SifiPipeline(bowtie_db=<complete_path>,query_sequences=<complete_path>, mode=1)
+sifiOffTargets.run_pipeline
 ```
