@@ -1,19 +1,19 @@
 # sifi21INTA Package
 
-A `Python` code library for the prediction of siRNAs on genomes and transcriptomes.
+A `Python` code library for siRNAs prediction in genomes and transcriptomes.
 
-## Dependences
+### Dependences
 The following programs and packages need to be installed:
 
 - Programs:
   - `ViennaRNA`
   - `bowtie` (version 1)
-- `Pytyon` packages:
+- `Python` packages:
   - `biopython`
   - `numpy`
   - `json`
 
-Use example:
+### Use example:
 
 For fesign:
 
