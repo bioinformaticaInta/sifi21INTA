@@ -1,4 +1,4 @@
-# sifi21INTA
+# sifi21INTA Package
 
 Use example:
 
