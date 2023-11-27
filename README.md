@@ -12,6 +12,7 @@ The following programs and packages need to be installed:
   - `biopython`
   - `numpy`
   - `json`
+  - `plotly`
 
 ### Use example:
 
@@ -19,14 +20,14 @@ For fesign:
 
 ```
 import sifi21INTA
-sifiDesign = sifi21INTA.SifiPipeline(bowtie_db=<complete_path>,query_sequences=<complete_path>, mode=0)
-sifiDesign.run_pipeline
+sifiDesign = sifi21INTA.SifiPipeline(bowtieDB=<complete_path>,querySequences=<complete_path>, outputDir=<complete_path>, mode=0)
+sifiDesign.runPipeline()
 ```
 
 For off target search:
 
 ```
 import sifi21INTA
-sifiOffTargets = sifi21INTA.SifiPipeline(bowtie_db=<complete_path>,query_sequences=<complete_path>, mode=1)
-sifiOffTargets.run_pipeline
+sifiOffTargets = sifi21INTA.SifiPipeline(bowtieDB=<complete_path>,querySequences=<complete_path>, outputDir=<complete_path>, mode=1)
+sifiOffTargets.runPipeline()
 ```
