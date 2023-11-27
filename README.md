@@ -10,7 +10,6 @@ The following programs and packages need to be installed:
   - `bowtie` (version 1)
 - `Python` packages:
   - `biopython`
-  - `numpy`
   - `json`
   - `plotly`
 
