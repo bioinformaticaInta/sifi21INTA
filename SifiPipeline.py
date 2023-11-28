@@ -72,12 +72,11 @@ class SifiPipeline:
             sirnaFastaFile.write(sequence + '\n')
         sirnaFastaFile.close()
 
-    #TODO: Generar plot y diferentes salidas deseadas!!!!!
     def designPipeline(self):
         # Run BOWTIE against DB
         self.runBowtie()
         
-        # Get main targets
+        # Select main targets
         self.selectMainTargets()
         
         # Run RNAplfold
@@ -97,6 +96,9 @@ class SifiPipeline:
     def offTargetPipeline(self):
         # Run BOWTIE against DB
         self.runBowtie()
+
+        #Plot alignments figure
+        self.selectMainTarget()
 
         # Load results to JSON format
         self.createJsonFile()
@@ -198,6 +200,10 @@ class SifiPipeline:
         return posX,effCount,offRegions
 
     def paintTargetRegions(self, fig, maxEffCount, regions, mode="bowtie"):
+        ##TODO: Corregir como se usan las paletas de colores
+        colours = px.colors.sequential.Sunsetdark + px.colors.sequential.Agsunset + px.colors.sequential.deep + \
+                  px.colors.sequential.thermal + px.colors.sequential.speed + px.colors.sequential.haline
+
         targetPos = 0
         barHeight = maxEffCount/len(regions)
         targetNumbers = {}
@@ -209,7 +215,7 @@ class SifiPipeline:
                 targetLegend = str(targetPos+1) + ": " + target + "(" + str(self.allTargets[target]) + " matches)"
             for start,end in regions[target]:
                 fig.add_shape(x0=start, y0=targetPos*barHeight, x1=end, y1=(targetPos+1)*barHeight, type="rect",
-                              fillcolor=px.colors.sequential.Plasma[9-targetPos], opacity=0.5, name=targetLegend,
+                              fillcolor=colours[targetPos], opacity=0.5, name=targetLegend,
                               layer="below", line_width=0, showlegend=showLegend)
                 showLegend = False
             targetPos += 1
@@ -234,12 +240,14 @@ class SifiPipeline:
             )
             fig.write_html(self.outputDir+"/"+self.queryName+"_mainTargets_selection_plot.html")
 
-            mainTargetNumbers = input("Select main targets (comma separated): ").split(",")
-            for mainTargetNumber in mainTargetNumbers:
-                if mainTargetNumber in allTargetsNumbers:
-                    self.mainTargets.append(allTargetsNumbers[mainTargetNumber])
-                else:
-                    raise Exception("Incorrect target number: %s" % (mainTargetNumber))
+
+            if self.mode == 0:
+                mainTargetNumbers = input("Select main targets (comma separated): ").split(",")
+                for mainTargetNumber in mainTargetNumbers:
+                    if mainTargetNumber in allTargetsNumbers:
+                        self.mainTargets.append(allTargetsNumbers[mainTargetNumber])
+                    else:
+                        raise Exception("Incorrect target number: %s" % (mainTargetNumber))
 
     def createJsonFile(self):
         jsonFile = open(self.jsonFileName, "w")
