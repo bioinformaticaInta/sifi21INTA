@@ -6,6 +6,7 @@ import os
 import json
 from collections import Counter
 import plotly.graph_objects as go
+import plotly.express as px
 
 import sifi21INTA.generalFunctions as generalFunctions
 import sifi21INTA.Sirna as Sirna
@@ -77,7 +78,7 @@ class SifiPipeline:
         self.runBowtie()
         
         # Get main targets
-        self.getMainTargets()
+        self.selectMainTargets()
         
         # Run RNAplfold
         self.runRnaplfold()
@@ -171,17 +172,74 @@ class SifiPipeline:
                 sequenceN2 = self.sirnaData[sirnaName-2].sequence
             sirna.calculateEfficiency(sequenceN2, self.accessibilityWindow, self.tsAccessibilityTreshold, self.endStabilityTreshold, self.startPosition, self.endNucleotides, self.overhang, self.terminalCheck, self.strandCheck, self.endCheck, self.accessibilityCheck)
 
-    def getMainTargets(self):
-        """ The user must choose the main targets from all bowtie hit names.
-           All remaining hits will be marked as off-targets."""
-        # TODO: Open popup to choose main target
+    def informationForFigure(self):
+        queryLen = len(self.querySequence)
+        posX = [int(i) for i in range(1,queryLen+1)]
+        effCount = [0]*queryLen
+        offRegions = {}
+        
+        for sirnaName in sorted(self.sirnaData.keys()):
+            startPos = sirnaName-1
+            endPos = startPos + (self.sirnaSize-1)
+            sirna = self.sirnaData[sirnaName]
+            if sirna.isEfficientCheck():
+                for sirnaPos in range(startPos, endPos):
+                    effCount[sirnaPos]+=1
+            offTargets = sirna.getOffTargets(self.mainTargets)
+            for offTarget in offTargets:
+                start = startPos
+                if offTarget in offRegions:
+                    if offRegions[offTarget] and offRegions[offTarget][-1][1] >= startPos:
+                        lastRegion = offRegions[offTarget].pop()
+                        start = lastRegion[0]-1
+                else:
+                    offRegions[offTarget] = []
+                offRegions[offTarget].append((start+1 , endPos+1))
+        return posX,effCount,offRegions
+
+    def paintTargetRegions(self, fig, maxEffCount, regions, mode="bowtie"):
+        targetPos = 0
+        barHeight = maxEffCount/len(regions)
+        targetNumbers = {}
+        for target in regions:
+            targetNumbers[str(targetPos+1)] = target
+            showLegend = True
+            targetLegend = target
+            if mode == "bowtie":
+                targetLegend = str(targetPos+1) + ": " + target + "(" + str(self.allTargets[target]) + " matches)"
+            for start,end in regions[target]:
+                fig.add_shape(x0=start, y0=targetPos*barHeight, x1=end, y1=(targetPos+1)*barHeight, type="rect",
+                              fillcolor=px.colors.sequential.Plasma[9-targetPos], opacity=0.5, name=targetLegend,
+                              layer="below", line_width=0, showlegend=showLegend)
+                showLegend = False
+            targetPos += 1
+        return targetNumbers
+
+    def selectMainTargets(self):
         if self.allTargets:
-            allTargetsData = sorted(self.allTargets.items(), key=lambda x: x[1], reverse=True)
-            print(allTargetsData)
-            mainTargetPos = input("Select main targets (comma separated): ").split(",")
-            for posTarget in range(len(allTargetsData)):
-                if str(posTarget+1) in mainTargetPos:
-                    self.mainTargets.append(allTargetsData[posTarget][0])
+            posX,effCount,allRegions = self.informationForFigure()
+
+            fig = go.Figure()
+            fig.update_xaxes(range=[0, len(posX)])
+            fig.update_yaxes(range=[0, len(allRegions)])
+
+            allTargetsNumbers = self.paintTargetRegions(fig, len(allRegions), allRegions)
+            
+            fig.update_layout(
+                title='Bowtie alignment regions per target position', # Title
+                xaxis_title='Target position', # y-axis name
+                yaxis_title='Database target', # x-axis name
+                xaxis_tickangle=45,  # Set the x-axis label angle
+                showlegend=True,     # Display the legend
+            )
+            fig.write_html(self.outputDir+"/"+self.queryName+"_mainTargets_selection_plot.html")
+
+            mainTargetNumbers = input("Select main targets (comma separated): ").split(",")
+            for mainTargetNumber in mainTargetNumbers:
+                if mainTargetNumber in allTargetsNumbers:
+                    self.mainTargets.append(allTargetsNumbers[mainTargetNumber])
+                else:
+                    raise Exception("Incorrect target number: %s" % (mainTargetNumber))
 
     def createJsonFile(self):
         jsonFile = open(self.jsonFileName, "w")
@@ -223,13 +281,13 @@ class SifiPipeline:
         efficientWithoutOff = 0
         for sirnaName in sorted(self.sirnaData.keys()):
             sirna = self.sirnaData[sirnaName]
-            offCheck = sirna.haveOffTargets(self.mainTargets)
+            offTargets = sirna.getOffTargets(self.mainTargets)
             effCheck = sirna.isEfficientCheck()
-            if offCheck == False:
+            if not offTargets:
                 totalWithoutOff += 1
             if effCheck:
                 efficient += 1
-            if effCheck and not offCheck:
+            if effCheck and not offTargets:
                 #print(sirnaName, sirna)
                 efficientWithoutOff += 1
             total += 1
@@ -244,31 +302,13 @@ class SifiPipeline:
         print("|---------------------------------------------------------------------------------|")
 
     def efficiencyFigure(self):
-        queryLen = len(self.querySequence)
-        pos = [int(i) for i in range(1,queryLen+1)]
-        count = [0]*queryLen
-        offRegions = []
-        
-        for sirnaName in sorted(self.sirnaData.keys()):
-            start = sirnaName-1
-            end = start + (self.sirnaSize-1)
-            sirna = self.sirnaData[sirnaName]
-            if sirna.isEfficientCheck():
-                for sirnaPos in range(start, end):
-                    count[sirnaPos]+=1
-            if sirna.haveOffTargets(self.mainTargets):
-                if offRegions and offRegions[-1][1] >= start:
-                    lastRegion = offRegions.pop()
-                    start = lastRegion[0]-1
-                offRegions.append((start+1 , end+1))
+        posX,effCount,offRegions = self.informationForFigure()
 
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=pos, y=count,
-                                 line_shape='hv', # Connect data points with lines
-                                 #mode='lines', # Connect data points with lines
-                                 name='siRNAs efficients')) # Name in the legend
-        
-        # Layout parameters
+        fig.add_trace(go.Scatter(x=posX, y=effCount, line_shape='hv', name='siRNAs efficients'))
+       
+        self.paintTargetRegions(fig, max(effCount), offRegions, "efficiency")
+
         fig.update_layout(
             title='siRNAs efficients per target position', # Title
             xaxis_title='Target position', # y-axis name
@@ -276,12 +316,4 @@ class SifiPipeline:
             xaxis_tickangle=45,  # Set the x-axis label angle
             showlegend=True,     # Display the legend
         )
-        #TODO: Hay que hacer un merge de las regiones que comparten posiciones para que sea una unica region
-        # se podria hacer a medida que se van cargando las regiones, corriendo los extremos
-        for start,end in offRegions:
-            fig.add_vrect(x0=start, x1=end,
-                      fillcolor="LightSalmon", opacity=0.5,
-                      layer="below", line_width=0)
-
-        # save this file as a standalong html file:
-        fig.write_html(self.outputDir+"/"+self.queryName+".html")
+        fig.write_html(self.outputDir+"/"+self.queryName+"_efficiency_plot.html")

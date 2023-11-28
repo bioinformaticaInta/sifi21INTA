@@ -35,12 +35,12 @@ class Sirna:
     def bowtieHitNames(self):
         return {alignment[1] for alignment in self.bowtieData} if self.bowtieData else set() 
 
-    def haveOffTargets(self, mainTargets):
-        off = False
+    def getOffTargets(self, mainTargets):
+        offTargets = set()
         for hitName in self.bowtieHitNames():
             if hitName not in mainTargets:
-                off = True
-        return off
+                offTargets.add(hitName)
+        return offTargets
 
     def calculateEfficiency(self, sequenceN2, accessibilityWindow, tsAccessibilityTreshold, endStabilityTreshold, startPosition, endNucleotides, overhang, terminalCheck, strandCheck, endCheck, accessibilityCheck):
         self.lunpDataXmer = self.lunpData[accessibilityWindow-1]
