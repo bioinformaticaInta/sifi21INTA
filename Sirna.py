@@ -7,8 +7,8 @@ import sifi21INTA.freeEnergy as freeEnergy
 class Sirna:
     def __init__(self, sequence):
         self.sequence = sequence
-        self.bowtieData = None
-        self.lunpData = None
+        self.bowtieData = None        #(hitName, hitPos, hitStrand, hitMissmatches)
+        self.rnaplfoldData = None
         self.lunpDataXmer = None
         self.strandSelection = None
         self.endStability = None
@@ -33,7 +33,7 @@ class Sirna:
         return self.isEfficient == True
 
     def bowtieHitNames(self):
-        return {alignment[1] for alignment in self.bowtieData} if self.bowtieData else set() 
+        return {alignment[0] for alignment in self.bowtieData} if self.bowtieData else set() 
 
     def getOffTargets(self, mainTargets):
         offTargets = set()
@@ -43,7 +43,7 @@ class Sirna:
         return offTargets
 
     def calculateEfficiency(self, sequenceN2, accessibilityWindow, tsAccessibilityTreshold, endStabilityTreshold, startPosition, endNucleotides, overhang, terminalCheck, strandCheck, endCheck, accessibilityCheck):
-        self.lunpDataXmer = self.lunpData[accessibilityWindow-1]
+        self.lunpDataXmer = self.rnaplfoldData[accessibilityWindow-1]
         self.calculateStrandSelection(sequenceN2, startPosition, endNucleotides, overhang)
         self.calculateEndStability(sequenceN2, endStabilityTreshold, startPosition, endNucleotides, overhang)
         self.calculatePairProbability(tsAccessibilityTreshold)

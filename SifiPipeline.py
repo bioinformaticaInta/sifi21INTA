@@ -12,7 +12,7 @@ import sifi21INTA.generalFunctions as generalFunctions
 import sifi21INTA.Sirna as Sirna
 
 class SifiPipeline:
-    def __init__(self, bowtieDB, queryFile, outputDir, mode=0, sirnaSize=21, mismatches=0, accessibilityCheck=True, accessibilityWindow=8, strandCheck=True, endCheck=True, endStabilityTreshold = 1.0, targetSiteAccessibilityTreshold=0.1, terminalCheck=True):
+    def __init__(self, bowtieDB, queryFile, outputDir, mode=0, refGenome=False, refGenomeRegionSize=None, sirnaSize=21, mismatches=0, accessibilityCheck=True, accessibilityWindow=8, strandCheck=True, endCheck=True, endStabilityTreshold = 1.0, targetSiteAccessibilityTreshold=0.1, terminalCheck=True):
 
         # Parameters
         self.mode = mode                                                        # Mode, either RNAi design (0) or off-target prediction (1)
@@ -31,11 +31,18 @@ class SifiPipeline:
         self.bowtieDB = bowtieDB                                                # Bowtie DB complete path
         self.allTargets = {}
         self.mainTargets = []
+        self.genomeLenghts = {}                                                 # Dictionary with genome information (name:len)
+        self.refGenomeLenghts(refGenome)
+        self.refGenomeRegionSize = refGenomeRegionSize
+        
         self.outputDir = outputDir                                              # Outpur directory path
         self.queryFile = queryFile                                              # Query sequence in single fasta format complete path
         query = tuple(SeqIO.parse(queryFile, "fasta"))[0]
         self.queryName = str(query.id).replace(" ","_")
         self.querySequence = str(query.seq)
+        if not self.refGenomeRegionSize:
+            self.refGenomeRegionSize = 2*len(self.querySequence)
+        
         self.sirnaFastaFile = self.outputDir+"/"+self.queryName+"."+str(self.sirnaSize)+"sirnas.fasta"
         self.sirnaData = {}
         self.jsonFileName = self.outputDir+"/"+self.queryName+".json"
@@ -49,6 +56,20 @@ class SifiPipeline:
         self.overhang = 2                                                       # siRNA overhang
         self.endNucleotides = 3                                                 # siRNA end nucleotides
 
+    def refGenomeLenghts(self, refGenome):
+        if refGenome:
+            os.chdir(self.bowtieLocation)
+            process = subprocess.Popen(["bowtie-inspect", "-s", self.bowtieDB], stdout=subprocess.PIPE)
+            out,err = process.communicate()
+            if not process.returncode:
+                out = str(out)
+                for line in out.split('\\n'):
+                    if "Sequence" in line:
+                        line = line.split('\\t')
+                        self.genomeLenghts[line[1].split(" ")[0]] = int(line[2])
+            else:
+                raise Exception("Error obtaining genome information")
+
     def runPipeline(self):
         # Create all siRNAs of size "sirna_size" and save them into multifasta and tab files
         self.createSirnas()
@@ -60,14 +81,16 @@ class SifiPipeline:
         return tableData
 
     def createSirnas(self):
-        #Create siRNA's of size "sirna_size" of a sequence.
+        #Create all siRNA's of size "self.sirnaSize" of a sequence.
         # Slice over sequence and split into xmers.
         sirnaFastaFile = open(self.sirnaFastaFile, 'w')
         start = self.startPosition
         for start in range(start , len(self.querySequence)-self.sirnaSize+1):
             sequence = self.querySequence[start:start+self.sirnaSize]
             sequence.upper()
+            #Add Sirna object to self.sirnaData dict
             self.sirnaData[start+1] = Sirna.Sirna(sequence)
+            #Write sirna sequence to multifasta file for bowtie
             sirnaFastaFile.write('>' + str(start+1) + '\n')
             sirnaFastaFile.write(sequence + '\n')
         sirnaFastaFile.close()
@@ -98,7 +121,7 @@ class SifiPipeline:
         self.runBowtie()
 
         #Plot alignments figure
-        self.selectMainTarget()
+        self.bowtieFigure()
 
         # Load results to JSON format
         self.createJsonFile()
@@ -116,24 +139,25 @@ class SifiPipeline:
             self.loadBowtieData(bowtieFile)
 
     def loadBowtieData(self, bowtieFile):
-        """Converts Bowtie data into lists of list. Just for convenience."""
+        #Load bowtie alignments for each Sirna
         bowtieDataFile = open(bowtieFile)
         for bowtieMatch in bowtieDataFile:
             bowtieDataSplit = bowtieMatch.strip().split('\t')
             sirnaName = int(bowtieDataSplit[0])
+            hitStrand = bowtieDataSplit[1]
             hitName = bowtieDataSplit[2]
-
-            # If we have missmatches, we will append a value for each entry.
-            # Data for bowtie align: (strand, hit name, alignment pos, missmatches)
-            if len(bowtieDataSplit) == 7:
-                bowtieDataSplit = bowtieDataSplit[1:3]+[int(bowtieDataSplit[3]) , 0]
-            else:
-                bowtieDataSplit = bowtieDataSplit[1:3]+[int(bowtieDataSplit[3]) , int(bowtieDataSplit[7])]
+            hitPos = int(bowtieDataSplit[3])
+            hitMissmatches = 0
+            if len(bowtieDataSplit) == 8:
+                hitMissmatches = int(bowtieDataSplit[7])
             
-            sirnaBowtieData = self.sirnaData[sirnaName].bowtieData
+            #If reference is a genome, the target is a region of a "self.refGenomeRegionSize" size
+            if self.genomeLenghts:
+                hitName += "_"+generalFunctions.getChromosomeRegion(hitPos, self.genomeLenghts[hitName], self.refGenomeRegionSize)
+            
             if not self.sirnaData[sirnaName].bowtieData:
                 self.sirnaData[sirnaName].bowtieData = []    
-            self.sirnaData[sirnaName].bowtieData.append(tuple(bowtieDataSplit))
+            self.sirnaData[sirnaName].bowtieData.append((hitName, hitPos, hitStrand, hitMissmatches))
             if hitName not in self.allTargets:
                 self.allTargets[hitName] = 1
             else:
@@ -153,9 +177,9 @@ class SifiPipeline:
 
         lunpFileName = cwd + '/' + self.queryName + '_lunp'
         if os.path.exists(lunpFileName):
-            self.loadLunpData(lunpFileName)
+            self.loadRnaplfoldData(lunpFileName)
         
-    def loadLunpData(self, lunpFileName):
+    def loadRnaplfoldData(self, lunpFileName):
         lunpFile = open(lunpFileName)
         for lunpLine in lunpFile:
             if "#" not in lunpLine:
@@ -163,7 +187,7 @@ class SifiPipeline:
                 end = int(lunpLine[0])
                 if end >= self.sirnaSize:
                     sirnaName = end-self.sirnaSize+1
-                    self.sirnaData[sirnaName].lunpData = tuple(map(float, lunpLine[1:]))
+                    self.sirnaData[sirnaName].rnaplfoldData = tuple(map(float, lunpLine[1:]))
 
     def calculateAllSirnasEfficiency(self):
         for sirnaName in self.sirnaData:
@@ -174,7 +198,47 @@ class SifiPipeline:
                 sequenceN2 = self.sirnaData[sirnaName-2].sequence
             sirna.calculateEfficiency(sequenceN2, self.accessibilityWindow, self.tsAccessibilityTreshold, self.endStabilityTreshold, self.startPosition, self.endNucleotides, self.overhang, self.terminalCheck, self.strandCheck, self.endCheck, self.accessibilityCheck)
 
+    def selectMainTargets(self):
+        if self.allTargets:
+            allTargetsNumbers = self.bowtieFigure()
+            if self.mode == 0:
+                mainTargetNumbers = input("Select main targets (comma separated): ").split(",")
+                for mainTargetNumber in mainTargetNumbers:
+                    if mainTargetNumber in allTargetsNumbers:
+                        self.mainTargets.append(allTargetsNumbers[mainTargetNumber])
+                    else:
+                        raise Exception("Incorrect target number: %s" % (mainTargetNumber))
+        else:
+            print("No Bowtie alignmets")
+    
+    def bowtieFigure(self):
+        #Obtain all target regions, because we still don't have main targets selected
+        #For bowtie figure efficiency not calculed yet, then effCounts contains all zeros
+        posX,effCount,allRegions = self.informationForFigure()
+
+        fig = go.Figure()
+        fig.update_xaxes(range=[0, len(posX)])
+        fig.update_yaxes(range=[0, len(allRegions)]) #Heigth of one for each target region
+
+        allTargetsNumbers = self.paintTargetRegions(fig, len(allRegions), allRegions, "bowtie")
+        
+        fig.update_layout(
+            title='Bowtie alignment regions per target position', # Title
+            xaxis_title='Target position', # y-axis name
+            yaxis_title='Database target', # x-axis name
+            xaxis_tickangle=45,  # Set the x-axis label angle
+            showlegend=True,     # Display the legend
+        )
+        fig.write_html(self.outputDir+"/"+self.queryName+"_mainTargets_selection_plot.html")
+
+        return allTargetsNumbers
+
     def informationForFigure(self):
+        #Return three variables:
+        #   posX -> List with positions in a target sequence (X axis)
+        #   effCounts -> List with the amount of efficients sirnas at each position (Y axis)
+        #   offRegions -> Dictionary with regions with bowtie matches for each target in reference, excluding self.mainTargets
+
         queryLen = len(self.querySequence)
         posX = [int(i) for i in range(1,queryLen+1)]
         effCount = [0]*queryLen
@@ -187,6 +251,9 @@ class SifiPipeline:
             if sirna.isEfficientCheck():
                 for sirnaPos in range(startPos, endPos):
                     effCount[sirnaPos]+=1
+            #Obtain offTargets:
+            #   Transcriptome reference -> Transcripts
+            #   Genome reference -> Regions of self.refGenomeRegionSize sizes
             offTargets = sirna.getOffTargets(self.mainTargets)
             for offTarget in offTargets:
                 start = startPos
@@ -205,7 +272,7 @@ class SifiPipeline:
                   px.colors.sequential.thermal + px.colors.sequential.speed + px.colors.sequential.haline
 
         targetPos = 0
-        barHeight = maxEffCount/len(regions)
+        barHeight = maxEffCount/len(regions) #The heigth of bar for each target region depends of the heigth of the complete plot
         targetNumbers = {}
         for target in regions:
             targetNumbers[str(targetPos+1)] = target
@@ -221,34 +288,6 @@ class SifiPipeline:
             targetPos += 1
         return targetNumbers
 
-    def selectMainTargets(self):
-        if self.allTargets:
-            posX,effCount,allRegions = self.informationForFigure()
-
-            fig = go.Figure()
-            fig.update_xaxes(range=[0, len(posX)])
-            fig.update_yaxes(range=[0, len(allRegions)])
-
-            allTargetsNumbers = self.paintTargetRegions(fig, len(allRegions), allRegions)
-            
-            fig.update_layout(
-                title='Bowtie alignment regions per target position', # Title
-                xaxis_title='Target position', # y-axis name
-                yaxis_title='Database target', # x-axis name
-                xaxis_tickangle=45,  # Set the x-axis label angle
-                showlegend=True,     # Display the legend
-            )
-            fig.write_html(self.outputDir+"/"+self.queryName+"_mainTargets_selection_plot.html")
-
-
-            if self.mode == 0:
-                mainTargetNumbers = input("Select main targets (comma separated): ").split(",")
-                for mainTargetNumber in mainTargetNumbers:
-                    if mainTargetNumber in allTargetsNumbers:
-                        self.mainTargets.append(allTargetsNumbers[mainTargetNumber])
-                    else:
-                        raise Exception("Incorrect target number: %s" % (mainTargetNumber))
-
     def createJsonFile(self):
         jsonFile = open(self.jsonFileName, "w")
         self.dataToJson()
@@ -256,14 +295,12 @@ class SifiPipeline:
         jsonFile.close()
     
     def dataToJson(self):
-        """Extracts the data from bowtie results and put everything into json format.
-           Efficiency is calculated for each siRNA.
-           If no target is found, for design mode the siRNA fasta file is used instead of Bowtie data."""
+        #Extracts the data from bowtie results and efficiency and put everything into json format.
         for sirnaName in self.sirnaData:
             sirna = self.sirnaData[sirnaName]
             if sirna.bowtieData:
                 for alignment in sirna.bowtieData:
-                    hitName = alignment[1]
+                    hitName = alignment[0]
                     offTarget = True
                     if hitName in self.mainTargets:
                         offTarget = False
@@ -271,12 +308,12 @@ class SifiPipeline:
                     sirnaDict.update(self.sirnaData[sirnaName].toDict())
                     sirnaDict.update({"is_off_target": offTarget,
                                       "hit_name": hitName, 
-                                      "reference_strand_pos": alignment[2],
-                                      "strand": alignment[0], 
+                                      "reference_strand_pos": alignment[1],
+                                      "strand": alignment[2], 
                                       "mismatches": alignment[3]})
                     self.jsonList.append(sirnaDict)
+            # If no alignments, put energy information only in design mode
             elif self.mode == 0:
-                # Cuando no hay alignments, va solo la informacion de energia si es design
                 sirnaDict = {"query_name": self.queryName, "sirna_position": sirnaName}
                 sirnaDict.update(self.sirnaData[sirnaName].toDict())
                 sirnaDict.update({"is_off_target": False})
@@ -296,7 +333,6 @@ class SifiPipeline:
             if effCheck:
                 efficient += 1
             if effCheck and not offTargets:
-                #print(sirnaName, sirna)
                 efficientWithoutOff += 1
             total += 1
         if self.mode == 1:

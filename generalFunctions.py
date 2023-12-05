@@ -39,3 +39,27 @@ def getTableData(jsonFileName):
         if x[0] not in list(efficicentCounter):
             tableData.append([x[0], x[1], 0])
     return tableData
+
+def getChromosomeRegion(pos, chromLen, regionSize):
+    regionStr = None
+    if 1 <= pos <= chromLen:
+        regionStr = "%s-%s" % searchInterval(tuple(range(1,chromLen+1, regionSize)), pos)
+    return regionStr
+
+#Binary search of positional range interval
+def searchInterval(tuplePos, pos):
+    region = (None,None)
+    tupleLen = len(tuplePos)
+    if tupleLen > 2:
+        center = len(tuplePos)//2
+        if pos < tuplePos[center]:
+            if pos >= tuplePos[center-1]:
+                region = (tuplePos[center-1], tuplePos[center])
+            else:
+                region = searchInterval(tuplePos[:center], pos)
+        else:
+            if pos < tuplePos[center+1]:
+                region = (tuplePos[center], tuplePos[center+1])
+            else:
+                region = searchInterval(tuplePos[center+1:], pos)
+    return region
