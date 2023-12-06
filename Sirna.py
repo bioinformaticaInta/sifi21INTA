@@ -7,15 +7,21 @@ import sifi21INTA.freeEnergy as freeEnergy
 class Sirna:
     def __init__(self, sequence):
         self.sequence = sequence
-        self.bowtieData = None        #(hitName, hitPos, hitStrand, hitMissmatches)
-        self.rnaplfoldData = None
+        self.bowtieData = []     #list of tuples=(hitName, hitPos, hitStrand, hitMissmatches)
+        self.rnaplfoldData = tuple()
         self.lunpDataXmer = None
         self.strandSelection = None
         self.endStability = None
         self.targetSiteAccessibility = None
         self.isThermoEfficient = None
         self.isEfficient = None
-    
+   
+    def getSequence(self):
+        return self.sequence
+
+    def bowtieDataTuple(self):
+        return self.bowtieData
+
     def __repr__(self):
         return '< ' + ' | '.join(["sequence="+self.sequence,"bowtieData="+str(self.bowtieData)]) + ' >'
 
@@ -29,7 +35,7 @@ class Sirna:
                 "accessibility_value": self.lunpDataXmer, 
                 }
     
-    def isEfficientCheck(self):
+    def getEfficiency(self):
         return self.isEfficient == True
 
     def bowtieHitNames(self):
@@ -41,6 +47,12 @@ class Sirna:
             if hitName not in mainTargets:
                 offTargets.add(hitName)
         return offTargets
+
+    def addBowtieAlignment(self, name, pos, strand, missmatches):
+        self.bowtieData.append((name, pos, strand, missmatches)) 
+
+    def addRnaplfoldData(self, lunpData):
+        self.rnaplfoldData = tuple(map(float, lunpData))    
 
     def calculateEfficiency(self, sequenceN2, accessibilityWindow, tsAccessibilityTreshold, endStabilityTreshold, startPosition, endNucleotides, overhang, terminalCheck, strandCheck, endCheck, accessibilityCheck):
         self.lunpDataXmer = self.rnaplfoldData[accessibilityWindow-1]

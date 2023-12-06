@@ -63,3 +63,51 @@ def searchInterval(tuplePos, pos):
             else:
                 region = searchInterval(tuplePos[center+1:], pos)
     return region
+
+def addChromosomeRegions(bowtieAlignments, targetLen, xmer):
+    #The input is a list of lists containing: [sirna, hitName, hisPos, hitStrand, hitMissmatches]
+    chromRegions = {}
+    #Traversing ordered by hit positions assembling the regions shared between matches
+    for alignment in sorted(bowtieAlignments, key =lambda x: x[2]):
+        start = alignment[2]
+        end = start + xmer-1
+        if not alignment[1] in chromRegions:
+            chromRegions[alignment[1]] = [[start,end]]
+        else:
+            #if any region exists, search the possible overlap
+            regions = chromRegions[alignment[1]]
+            posRegion = 0
+            prevRegion = False
+            while not prevRegion and posRegion < len(regions):
+                region = regions[posRegion]
+                if start <= region[1] or (end-region[0]) <= 2*targetLen: #overlap!!!
+                    region[1] = end
+                    prevRegion = True
+                posRegion += 1
+            if not prevRegion: #Insert new regions if not overlaping
+                regions.append([start,end])
+    #Add position of the region to each hit name
+    for alignment in bowtieAlignments:
+        regions = chromRegions[alignment[1]]
+        for region in regions:
+            if region[0] <= alignment[2] <= region[1]:
+                alignment[1] += "_"+"-".join(list(map(str,region)))
+            
+def bowtieToList(bowtieFileName):
+    bowtieFile = open(bowtieFileName)
+    bowtieAlignments = []                                                                                                              
+    for bowtieMatch in bowtieFile:
+        bowtieMatch = bowtieMatch.strip().split('\t')                                                                                  
+        sirnaName = int(bowtieMatch[0])
+        hitStrand = bowtieMatch[1]
+        hitName = bowtieMatch[2]
+        hitPos = int(bowtieMatch[3])
+        hitMissmatches = 0
+        if len(bowtieMatch) == 8:
+            hitMissmatches = int(bowtieMatch[7])
+        bowtieAlignments.append([sirnaName, hitName, hitPos, hitStrand, hitMissmatches])
+    bowtieFile.close()
+    return bowtieAlignments
+
+
+
