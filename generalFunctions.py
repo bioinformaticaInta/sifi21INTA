@@ -101,7 +101,7 @@ def bowtieToList(bowtieFileName):
         sirnaName = int(bowtieMatch[0])
         hitStrand = bowtieMatch[1]
         hitName = bowtieMatch[2]
-        hitPos = int(bowtieMatch[3])
+        hitPos = int(bowtieMatch[3])+1
         hitMissmatches = 0
         if len(bowtieMatch) == 8:
             hitMissmatches = int(bowtieMatch[7])
