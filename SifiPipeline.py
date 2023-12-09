@@ -71,12 +71,10 @@ class SifiPipeline:
     def runPipeline(self):
         # Create all siRNAs of size "sirna_size" and save them into multifasta and tab files
         self.createSirnas()
-        tableData = ""
         if self.mode == 0:
-            tableData = self.designPipeline()
+            self.designPipeline()
         else:
-            tableData = self.offTargetPipeline()
-        return tableData
+            self.offTargetPipeline()
 
     def createSirnas(self):
         #Create all siRNA's of size "self.sirnaSize" of a sequence.
@@ -204,22 +202,24 @@ class SifiPipeline:
     def bowtieFigure(self):
         #Obtain all target regions, because we still don't have main targets selected
         #For bowtie figure efficiency not calculed yet, then effCounts contains all zeros
-        posX,effCount,allRegions = self.informationForFigure()
+        allTargetsNumbers = {}
+        if self.allTargets:
+            posX,effCount,allRegions = self.informationForFigure()
 
-        fig = go.Figure()
-        fig.update_xaxes(range=[0, len(posX)])
-        fig.update_yaxes(range=[0, len(allRegions)]) #Heigth of one for each target region
+            fig = go.Figure()
+            fig.update_xaxes(range=[0, len(posX)])
+            fig.update_yaxes(range=[0, len(allRegions)]) #Heigth of one for each target region
 
-        allTargetsNumbers = self.paintTargetRegions(fig, len(allRegions), allRegions, "bowtie")
+            allTargetsNumbers = self.paintTargetRegions(fig, len(allRegions), allRegions, "bowtie")
         
-        fig.update_layout(
-            title='Bowtie alignment regions per target position', # Title
-            xaxis_title='Query position', # x-axis name
-            yaxis_title='Database target', # y-axis name
-            xaxis_tickangle=45,  # Set the x-axis label angle
-            showlegend=True,     # Display the legend
-        )
-        fig.write_html(self.outputDir+"/"+self.queryName+"_mainTargets_selection_plot.html")
+            fig.update_layout(
+                title='Bowtie alignment regions per target position', # Title
+                xaxis_title='Query position', # x-axis name
+                yaxis_title='Database target', # y-axis name
+                xaxis_tickangle=45,  # Set the x-axis label angle
+                showlegend=True,     # Display the legend
+            )
+            fig.write_html(self.outputDir+"/"+self.queryName+"_mainTargets_selection_plot.html")
 
         return allTargetsNumbers
 
