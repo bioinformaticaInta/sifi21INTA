@@ -258,13 +258,14 @@ class SifiPipeline:
 
     def paintTargetRegions(self, fig, maxEffCount, regions, mode="bowtie"):
         ##TODO: Corregir como se usan las paletas de colores
-        colours = px.colors.sequential.Sunsetdark + px.colors.sequential.Agsunset + px.colors.sequential.deep + \
+        colors = px.colors.sequential.Sunsetdark + px.colors.sequential.Agsunset + px.colors.sequential.deep + \
                   px.colors.sequential.thermal + px.colors.sequential.speed + px.colors.sequential.haline
 
         targetNumber = 1
         barHeight = maxEffCount/len(regions) #The heigth of bar for each target region depends of the heigth of the complete plot
         targetNumbers = {}
-        colourByTarget = {}
+        colorByTarget = {}
+        colorPos = 0
         for target in regions:
             targetNumbers[str(targetNumber)] = target 
             targetName = target
@@ -272,21 +273,24 @@ class SifiPipeline:
             if self.targetsInRegions:
                 targetName = "_".join(target.split("_")[0:-1])
                 targetRegion = target.split("_")[-1]
-            if targetName not in colourByTarget:
-                colourByTarget[targetName] = max(colourByTarget.values())+1 if colourByTarget else 0
+            if targetName not in colorByTarget:
+                colorByTarget[targetName] = colorPos
+                colorPos +=1
+                if colorPos >= len(colors):
+                    colorPos = 0
                 showLegend = True
             for xstart,xend in regions[target]:
                 ystart = (targetNumber-1)*barHeight
                 yend = targetNumber*barHeight
                 fig.add_shape(x0=xstart, y0=ystart, x1=xend, y1=yend, type="rect",
-                              fillcolor=colours[colourByTarget[targetName]], opacity=0.5, name=targetName,
+                              fillcolor=colors[colorByTarget[targetName]], opacity=0.5, name=targetName,
                               layer="below", line_width=0, showlegend=showLegend)
                 showLegend = False
                 if mode=="bowtie":
                     fig.add_trace(go.Scatter(x=[xstart,xstart,xend,xend,xstart],
                                              y=[ystart,yend,yend,ystart,ystart],
                                              mode="lines", name="", opacity=0, showlegend=False,
-                                             fill='toself',fillcolor=colours[colourByTarget[targetName]],
+                                             fill='toself',fillcolor=colors[colorByTarget[targetName]],
                                              text="<br>".join(["Target number: "+str(targetNumber),
                                                                "Target ID: "+targetName,
                                                                "Target Region: " +targetRegion if targetRegion else "",
