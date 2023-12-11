@@ -15,7 +15,7 @@ The following programs and packages need to be installed:
 
 ### Use example:
 
-For fesign:
+For design:
 
 ```
 import sifi21INTA
