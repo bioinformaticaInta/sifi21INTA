@@ -285,7 +285,7 @@ class SifiPipeline:
                 if mode=="bowtie":
                     fig.add_trace(go.Scatter(x=[xstart,xstart,xend,xend,xstart],
                                              y=[ystart,yend,yend,ystart,ystart],
-                                             mode="lines", name="", opacity=0,
+                                             mode="lines", name="", opacity=0, showlegend=False,
                                              fill='toself',fillcolor=colours[colourByTarget[targetName]],
                                              text="<br>".join(["Target number: "+str(targetNumber),
                                                                "Target ID: "+targetName,
