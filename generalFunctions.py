@@ -64,7 +64,7 @@ def searchInterval(tuplePos, pos):
                 region = searchInterval(tuplePos[center+1:], pos)
     return region
 
-def addChromosomeRegions(bowtieAlignments, targetLen, xmer):
+def addChromosomeRegions(bowtieAlignments, gapSize, xmer):
     #The input is a list of lists containing: [sirna, hitName, hisPos, hitStrand, hitMissmatches]
     chromRegions = {}
     #Traversing ordered by hit positions assembling the regions shared between matches
@@ -80,7 +80,7 @@ def addChromosomeRegions(bowtieAlignments, targetLen, xmer):
             prevRegion = False
             while not prevRegion and posRegion < len(regions):
                 region = regions[posRegion]
-                if start <= region[1] or (end-region[0]) <= 2*targetLen: #overlap!!!
+                if region[0] <= start <= region[1] or (start-region[1]) <= gapSize: #overlap!!!
                     region[1] = end
                     prevRegion = True
                 posRegion += 1
@@ -108,6 +108,3 @@ def bowtieToList(bowtieFileName):
         bowtieAlignments.append([sirnaName, hitName, hitPos, hitStrand, hitMissmatches])
     bowtieFile.close()
     return bowtieAlignments
-
-
-

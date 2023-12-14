@@ -7,13 +7,15 @@ import json
 from collections import Counter
 import plotly.graph_objects as go
 import plotly.express as px
+import plotly.figure_factory as pff
 import pandas as pd
+from datetime import datetime
 
 import sifi21INTA.generalFunctions as generalFunctions
 import sifi21INTA.Sirna as Sirna
 
 class SifiPipeline:
-    def __init__(self, bowtieDB, queryFile, outputDir, mode=0, targetsInRegions=False, sirnaSize=21, mismatches=0, accessibilityCheck=True, accessibilityWindow=8, strandCheck=True, endCheck=True, endStabilityTreshold = 1.0, targetSiteAccessibilityTreshold=0.1, terminalCheck=True):
+    def __init__(self, bowtieDB, queryFile, outputDir, mode=0, maxGapSize=None, targetsInRegions=False, sirnaSize=21, mismatches=0, accessibilityCheck=True, accessibilityWindow=8, strandCheck=True, endCheck=True, endStabilityTreshold = 1.0, targetSiteAccessibilityTreshold=0.1, terminalCheck=True):
 
         # Parameters
         self.mode = mode                                                        # Mode, either RNAi design (0) or off-target prediction (1)
@@ -33,13 +35,17 @@ class SifiPipeline:
         self.allTargets = {}
         self.mainTargets = []
         self.genomeLenghts = {}                                                 # Dictionary with genome information (name:len)
-        self.targetsInRegions = targetsInRegions                                # True to take targets separated by regions
         
         self.outputDir = outputDir                                              # Outpur directory path
         self.queryFile = queryFile                                              # Query sequence in single fasta format complete path
         query = tuple(SeqIO.parse(queryFile, "fasta"))[0]
         self.queryName = str(query.id).replace(" ","_")
         self.querySequence = str(query.seq)
+        
+        self.targetsInRegions = targetsInRegions                                # True to take targets separated by regions
+        self.maxGapSize = maxGapSize                                            # Maximum number of gap to join 2 regions
+        if self.targetsInRegions and not self.maxGapSize:
+            self.maxGapSize = len(self.querySequence)
         
         self.sirnaFastaFile = self.outputDir+"/"+self.queryName+"."+str(self.sirnaSize)+"sirnas.fasta"
         self.sirnaData = {}
@@ -140,7 +146,7 @@ class SifiPipeline:
         #Take the targets per regions defined with alignment overlaps
         if self.targetsInRegions:
             #Modify hitName adding the positions of each region
-            generalFunctions.addChromosomeRegions(bowtieAlignments, len(self.querySequence), self.sirnaSize)
+            generalFunctions.addChromosomeRegions(bowtieAlignments, self.maxGapSize, self.sirnaSize)
         #Load bowtie alignments for each Sirna
         for alignment in bowtieAlignments:
             sirnaName = alignment[0]
@@ -205,12 +211,7 @@ class SifiPipeline:
         allTargetsNumbers = {}
         if self.allTargets:
             posX,effCount,allRegions = self.informationForFigure()
-
-            fig = go.Figure()
-            fig.update_xaxes(range=[0, len(posX)])
-            fig.update_yaxes(range=[0, len(allRegions)]) #Heigth of one for each target region
-
-            allTargetsNumbers = self.paintTargetRegions(fig, len(allRegions), allRegions, "bowtie")
+            allTargetsNumbers,fig = self.paintTargetRegions(allRegions, "bowtie")
         
             fig.update_layout(
                 title='Bowtie alignment regions per target position', # Title
@@ -247,56 +248,63 @@ class SifiPipeline:
             offTargets = sirna.getOffTargets(self.mainTargets)
             for offTarget in offTargets:
                 start = startPos
+                count = 1
                 if offTarget in offRegions:
-                    if offRegions[offTarget] and offRegions[offTarget][-1][1] >= startPos:
+                    if startPos <= offRegions[offTarget][-1][1]:
                         lastRegion = offRegions[offTarget].pop()
                         start = lastRegion[0]-1
+                        count = lastRegion[2]+1
                 else:
                     offRegions[offTarget] = []
-                offRegions[offTarget].append((start+1 , endPos+1))
-        return posX,effCount,offRegions
+                offRegions[offTarget].append((start+1 , endPos+1, count))
+        return posX,effCount,offRegions 
 
-    def paintTargetRegions(self, fig, maxEffCount, regions, mode="bowtie"):
-        ##TODO: Corregir como se usan las paletas de colores
-        colors = px.colors.sequential.Sunsetdark + px.colors.sequential.Agsunset + px.colors.sequential.deep + \
-                  px.colors.sequential.thermal + px.colors.sequential.speed + px.colors.sequential.haline
-
-        targetNumber = 1
-        barHeight = maxEffCount/len(regions) #The heigth of bar for each target region depends of the heigth of the complete plot
+    def paintTargetRegions(self, regions, mode="bowtie"):
+        regionsData = []
+        deltaRegionsData = {}
         targetNumbers = {}
-        colorByTarget = {}
-        colorPos = 0
+        targetNumber = 1
         for target in regions:
             targetNumbers[str(targetNumber)] = target 
             targetName = target
-            targetRegion = None
+            targetRegion = ""
             if self.targetsInRegions:
                 targetName = "_".join(target.split("_")[0:-1])
                 targetRegion = target.split("_")[-1]
-            if targetName not in colorByTarget:
-                colorByTarget[targetName] = colorPos
-                colorPos +=1
-                if colorPos >= len(colors):
-                    colorPos = 0
-                showLegend = True
-            for xstart,xend in regions[target]:
-                ystart = (targetNumber-1)*barHeight
-                yend = targetNumber*barHeight
-                fig.add_shape(x0=xstart, y0=ystart, x1=xend, y1=yend, type="rect",
-                              fillcolor=colors[colorByTarget[targetName]], opacity=0.5, name=targetName,
-                              layer="below", line_width=0, showlegend=showLegend)
-                showLegend = False
-                if mode=="bowtie":
-                    fig.add_trace(go.Scatter(x=[xstart,xstart,xend,xend,xstart],
-                                             y=[ystart,yend,yend,ystart,ystart],
-                                             mode="lines", name="", opacity=0, showlegend=False,
-                                             fill='toself',fillcolor=colors[colorByTarget[targetName]],
-                                             text="<br>".join(["Target number: "+str(targetNumber),
-                                                               "Target ID: "+targetName,
-                                                               "Target Region: " +targetRegion if targetRegion else "",
-                                                               "Number of sirnas: "+str(self.allTargets[target])])))
+            deltaRegionsData[target] = []
+            for xstart,xend,count in regions[target]:
+                regionsData.append({"Target region name":target, 
+                                    "Query start":xstart, "Query end":xend, 
+                                    "Target ID":targetName, 
+                                    "Target region":targetRegion,
+                                    "Sirnas in block":count,
+                                    "Total sirnas":self.allTargets[target],
+                                    "Target number":targetNumber
+                                   })
+                deltaRegionsData[target].append(xend-xstart)    
             targetNumber += 1
-        return targetNumbers
+        df = pd.DataFrame(regionsData) 
+        hoverData = {"Target region name":False, "Target ID":True, "Target number":False, "Target region":True, "Sirnas in block":False, "Total sirnas":False,"Query start":False,"Query end":False}
+        hoverName = None
+        if mode=="bowtie":
+            hoverData={"Target region name":False, "Target ID":False, "Target number":True, "Target region":True if self.targetsInRegions else False, "Sirnas in block":True, "Total sirnas":True}
+            hoverName = "Target ID"
+
+        fig = px.timeline(df, x_start="Query start", x_end="Query end", y="Target region name", color="Target ID", hover_name=hoverName, hover_data=hoverData)#,color_discrete_map=colorByTarget)
+        fig.layout.xaxis.type = 'linear'
+        for figData in fig.data:
+            xData = []
+            yNamePre = None
+            for yName in figData.y:
+                if yName != yNamePre:
+                    yNamePre = yName
+                    pos = 0
+                xData.append(deltaRegionsData[yName][pos])
+                pos += 1
+            figData.x = xData
+        if mode == "bowtie":
+            fig.update_layout(yaxis_showticklabels=False)
+        return targetNumbers,fig
 
     def createJsonFile(self):
         jsonFile = open(self.jsonFileName, "w")
@@ -355,17 +363,24 @@ class SifiPipeline:
 
     def efficiencyFigure(self):
         posX,effCount,offRegions = self.informationForFigure()
-        df = pd.DataFrame({"Query position":posX , "Number of efficient siRNAs":effCount})
+        #Add (0,0) initial point to correct figure error when the initial
+        #y value is distinct on zero
+        posX = [0]+posX
+        effCount = [0]+effCount
+        if offRegions:
+            targetNumbers, fig = self.paintTargetRegions(offRegions, "efficiency")
+            fig.add_scatter(x=posX, y=effCount, line_shape='hv', name="Efficient siRNAs", hovertemplate='Query position: %{x}<br>Number of efficient siRNAs: %{y}')
+        else:
+            df = pd.DataFrame({"Query position":posX , "Number of efficient siRNAs":effCount})
+            fig = px.line(df, x="Query position", y="Number of efficient siRNAs", line_shape='hv')#, name="Efficient siRNAs")
         
-        fig = px.line(df, x="Query position", y="Number of efficient siRNAs", line_shape='hv')
-       
-        self.paintTargetRegions(fig, max(effCount), offRegions, "efficiency")
-
         fig.update_layout(
             title='siRNAs efficients per target position', # Title
             xaxis_title='Query position', # x-axis name
             yaxis_title='Number of efficient siRNAs', # y-axis name
             xaxis_tickangle=45,  # Set the x-axis label angle
             hovermode="x unified",
+            showlegend = True,
+            legend_title_text=''
         )
         fig.write_html(self.outputDir+"/"+self.queryName+"_efficiency_plot.html")
