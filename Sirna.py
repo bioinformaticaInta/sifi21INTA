@@ -38,18 +38,18 @@ class Sirna:
     def getEfficiency(self):
         return self.isEfficient == True
 
-    def bowtieHitNames(self):
+    def bowtieHits(self):
         return {alignment[0] for alignment in self.bowtieData} if self.bowtieData else set() 
 
     def getOffTargets(self, mainTargets):
         offTargets = set()
-        for hitName in self.bowtieHitNames():
-            if hitName not in mainTargets:
-                offTargets.add(hitName)
+        for hitTarget in self.bowtieHits():
+            if hitTarget not in mainTargets:
+                offTargets.add(hitTarget)
         return offTargets
 
-    def addBowtieAlignment(self, name, pos, strand, missmatches):
-        self.bowtieData.append((name, pos, strand, missmatches)) 
+    def addBowtieAlignment(self, targetSeq, pos, strand, missmatches):
+        self.bowtieData.append((targetSeq, pos, strand, missmatches)) 
 
     def addRnaplfoldData(self, lunpData):
         self.rnaplfoldData = tuple(map(float, lunpData))    

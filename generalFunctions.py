@@ -3,6 +3,9 @@
 import re
 import json
 from collections import Counter
+from BCBio import GFF
+
+import sifi21INTA.TargetSequence as TargetSequence
 
 def iterparse(j):
     """Work around because json can not load multiple objects.
@@ -64,18 +67,19 @@ def searchInterval(tuplePos, pos):
                 region = searchInterval(tuplePos[center+1:], pos)
     return region
 
-def addChromosomeRegions(bowtieAlignments, gapSize, xmer):
-    #The input is a list of lists containing: [sirna, hitName, hisPos, hitStrand, hitMissmatches]
-    chromRegions = {}
+def addTargetsRegions(bowtieAlignments, gapSize, xmer):
+    #The input is a list of lists containing: [sirna, hitTarget, hisPos, hitStrand, hitMissmatches]
+    targetsRegions = {}
     #Traversing ordered by hit positions assembling the regions shared between matches
     for alignment in sorted(bowtieAlignments, key =lambda x: x[2]):
         start = alignment[2]
         end = start + xmer-1
-        if not alignment[1] in chromRegions:
-            chromRegions[alignment[1]] = [[start,end]]
+        hitTarget = alignment[1]
+        if not hitTarget.getName() in targetsRegions:
+            targetsRegions[hitTarget.getName()] = [[start,end]]
         else:
             #if any region exists, search the possible overlap
-            regions = chromRegions[alignment[1]]
+            regions = targetsRegions[hitTarget.getName()]
             posRegion = 0
             prevRegion = False
             while not prevRegion and posRegion < len(regions):
@@ -88,23 +92,103 @@ def addChromosomeRegions(bowtieAlignments, gapSize, xmer):
                 regions.append([start,end])
     #Add position of the region to each hit name
     for alignment in bowtieAlignments:
-        regions = chromRegions[alignment[1]]
+        hitTarget = alignment[1]
+        regions = targetsRegions[hitTarget.getName()]
         for region in regions:
             if region[0] <= alignment[2] <= region[1]:
-                alignment[1] += "_"+"-".join(list(map(str,region)))
-            
+                hitTarget.setRegion(*region)
+    return targetsRegions
+
 def bowtieToList(bowtieFileName):
     bowtieFile = open(bowtieFileName)
     bowtieAlignments = []                                                                                                              
+    targetsRegions = {}
     for bowtieMatch in bowtieFile:
         bowtieMatch = bowtieMatch.strip().split('\t')                                                                                  
         sirnaName = int(bowtieMatch[0])
         hitStrand = bowtieMatch[1]
-        hitName = bowtieMatch[2]
+        hitTarget = TargetSequence.TargetSequence(bowtieMatch[2])
         hitPos = int(bowtieMatch[3])+1
         hitMissmatches = 0
         if len(bowtieMatch) == 8:
             hitMissmatches = int(bowtieMatch[7])
-        bowtieAlignments.append([sirnaName, hitName, hitPos, hitStrand, hitMissmatches])
+        bowtieAlignments.append([sirnaName, hitTarget, hitPos, hitStrand, hitMissmatches])
+        targetsRegions[bowtieMatch[2]] = []
     bowtieFile.close()
-    return bowtieAlignments
+    return bowtieAlignments,targetsRegions
+
+def addAnnotations(gffFileName, bowtieAlignments, genomicRef, inRegions, targetsRegions):
+    if genomicRef and inRegions:
+        gffData = getGFFDataFromFile(gffFileName)
+        #Add annotations from GFF to each region
+        #targetRegions is a dictionary with {targetName:[targetRegion1, targetRegion2, etc]} / targetRegion1=[startRegion1,endRegion1]
+        addGenomicAnnotations(gffData, bowtieAlignments, targetsRegions)
+    elif not genomicRef:
+        gffData = getGFFDataFromFile(gffFileName)
+        #targetsRegions is a dictionary as the genomic case with regions as value (targetsInRegions True) or with empty list (targetsInRegions False)
+        addTranscriptomicAnnotations(gffData, bowtieAlignments, targetsRegions.keys())
+
+def getGFFDataFromFile(gffFileName):
+    gffFile = open(gffFileName)
+    gffData = []
+    for rec in GFF.parse(gffFile):
+        gffData.append(rec)
+    gffFile.close()
+    return gffData 
+
+def addGenomicAnnotations(gffData, bowtieAlignments, targetsRegions):
+    targetsAnnotations = {}
+    for targetName in targetsRegions:
+        for region in targetsRegions[targetName]:
+            targetsAnnotations[(targetName, *region)] = getGenomicRegionAnnotation(gffData, targetName, *region)
+    #Add annotation for each alignment
+    for alignment in bowtieAlignments:
+        hitTarget = alignment[1]
+        for annotation in targetsAnnotations[(hitTarget.getName(), *hitTarget.getRegion())]:
+            hitTarget.addAnnotation(annotation)
+
+def addTranscriptomicAnnotations(gffData, bowtieAlignments, targetsNames):
+    targetsAnnotations = {}
+    for targetName in targetsNames:
+        targetsAnnotations[targetName] = getTranscriptAnnotation(gffData, targetName)
+    #Add annotation for each alignment
+    for alignment in bowtieAlignments:
+        hitTarget = alignment[1]
+        for annotation in targetsAnnotations[hitTarget.getName()]:
+                hitTarget.addAnnotation(annotation)
+    
+def getGenomicRegionAnnotation(gffData, targetName, startRegion, endRegion):
+    refInfo = []
+    for rec in gffData:
+        if rec.id == targetName:
+            for feature in rec.features: ##agregar condicion para que solo sean genes
+                if feature.type == "gene":
+                    featureInRegion = None
+                    #Partial end of gene at the region start
+                    if feature.location.start < startRegion and startRegion < feature.location.end <= endRegion:
+                        featureInRegion = feature
+                    #Partial start of gene at the region end
+                    elif startRegion <= feature.location.start < endRegion and  feature.location.end > endRegion:
+                        featureInRegion = feature
+                    #gene included in region
+                    elif feature.location.start >= startRegion and  feature.location.end <= endRegion:
+                        featureInRegion = feature
+                    #region included in gene
+                    elif feature.location.start < startRegion and  feature.location.end > endRegion:
+                        featureInRegion = feature
+                    if featureInRegion:
+                        data = featureInRegion.id
+                        if 'description' in featureInRegion.qualifiers:
+                            data += " (" + featureInRegion.qualifiers['description'][0] + ")"
+                        refInfo.append(data)
+    return refInfo
+
+def getTranscriptAnnotation(gffData, seqName):
+    refInfo = []
+    for rec in gffData:
+        for feature in rec.features:
+            for subfeature in feature.sub_features:
+                if seqName in subfeature.id or ('Name' in subfeature.qualifiers and seqName in subfeature.qualifiers['Name']):
+                    refInfo.append(feature.qualifiers["description"][0])
+    return refInfo
+

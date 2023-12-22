@@ -13,9 +13,10 @@ from datetime import datetime
 
 import sifi21INTA.generalFunctions as generalFunctions
 import sifi21INTA.Sirna as Sirna
+import sifi21INTA.TargetSequence as TargetSequence
 
 class SifiPipeline:
-    def __init__(self, bowtieDB, queryFile, outputDir, mode=0, maxGapSize=None, targetsInRegions=False, sirnaSize=21, mismatches=0, accessibilityCheck=True, accessibilityWindow=8, strandCheck=True, endCheck=True, endStabilityTreshold = 1.0, targetSiteAccessibilityTreshold=0.1, terminalCheck=True):
+    def __init__(self, bowtieDB, queryFile, outputDir, mode=0, maxGapSize=None, genomicReference=True, gffFile=None, targetsInRegions=False, sirnaSize=21, mismatches=0, accessibilityCheck=True, accessibilityWindow=8, strandCheck=True, endCheck=True, endStabilityTreshold = 1.0, targetSiteAccessibilityTreshold=0.1, terminalCheck=True):
 
         # Parameters
         self.mode = mode                                                        # Mode, either RNAi design (0) or off-target prediction (1)
@@ -42,6 +43,8 @@ class SifiPipeline:
         self.queryName = str(query.id).replace(" ","_")
         self.querySequence = str(query.seq)
         
+        self.gffFile = gffFile                                                  # GFF annotation file complete path
+        self.genomicReference = genomicReference                                # True if the reference is a genome
         self.targetsInRegions = targetsInRegions                                # True to take targets separated by regions
         self.maxGapSize = maxGapSize                                            # Maximum number of gap to join 2 regions
         if self.targetsInRegions and not self.maxGapSize:
@@ -100,7 +103,7 @@ class SifiPipeline:
     def designPipeline(self):
         # Run BOWTIE against DB
         self.runBowtie()
-        
+
         # Select main targets
         self.selectMainTargets()
         
@@ -142,21 +145,24 @@ class SifiPipeline:
 
     def loadBowtieData(self, bowtieFileName):
         #Load list with all alignments information contains: [sirnaName, hitName, hitPos, hitStrand, hitMissmatches]
-        bowtieAlignments = generalFunctions.bowtieToList(bowtieFileName)
+        bowtieAlignments, targetsRegions = generalFunctions.bowtieToList(bowtieFileName)
         #Take the targets per regions defined with alignment overlaps
         if self.targetsInRegions:
-            #Modify hitName adding the positions of each region
-            generalFunctions.addChromosomeRegions(bowtieAlignments, self.maxGapSize, self.sirnaSize)
+            #Add the positions of the region for each alignment in the reference
+            targetsRegions = generalFunctions.addTargetsRegions(bowtieAlignments, self.maxGapSize, self.sirnaSize)
+        #Add annotation from gff file
+        if self.gffFile:
+            generalFunctions.addAnnotations(self.gffFile, bowtieAlignments, self.genomicReference, self.targetsInRegions, targetsRegions)
         #Load bowtie alignments for each Sirna
         for alignment in bowtieAlignments:
             sirnaName = alignment[0]
-            hitName = alignment[1]
+            hitTarget = alignment[1]
             self.sirnaData[sirnaName].addBowtieAlignment(*alignment[1:])
             #Count number of hits for each target
-            if hitName not in self.allTargets:
-                self.allTargets[hitName] = 1
+            if hitTarget not in self.allTargets:
+                self.allTargets[hitTarget] = 1
             else:
-                self.allTargets[hitName] += 1
+                self.allTargets[hitTarget] += 1
 
     def runRnaplfold(self):
         os.chdir(self.rnaplfoldLocation)
@@ -244,7 +250,7 @@ class SifiPipeline:
                     effCount[sirnaPos]+=1
             #Obtain offTargets:
             #   Transcriptome reference -> Transcripts
-            #   Genome reference -> Chromose regions
+            #   Genome reference -> Chromosome regions
             offTargets = sirna.getOffTargets(self.mainTargets)
             for offTarget in offTargets:
                 start = startPos
@@ -264,37 +270,36 @@ class SifiPipeline:
         deltaRegionsData = {}
         targetNumbers = {}
         targetNumber = 1
+        gffData = []
         for target in regions:
             targetNumbers[str(targetNumber)] = target 
-            targetName = target
-            targetRegion = ""
-            if self.targetsInRegions:
-                targetName = "_".join(target.split("_")[0:-1])
-                targetRegion = target.split("_")[-1]
-            deltaRegionsData[target] = []
+            deltaRegionsData[target.getNameWithRegion()] = []
             for xstart,xend,count in regions[target]:
-                regionsData.append({"Target region name":target, 
+                regionsData.append({"Target region name":target.getNameWithRegion(), 
                                     "Query start":xstart, "Query end":xend, 
-                                    "Target ID":targetName, 
-                                    "Target region":targetRegion,
+                                    "Target ID":target.getName(), 
+                                    "Target region":"-".join(map(str,target.getRegion())),
                                     "Sirnas in block":count,
                                     "Total sirnas":self.allTargets[target],
-                                    "Target number":targetNumber
+                                    "Target number":targetNumber,
+                                    "Annotation":"<br>".join(target.getAnnotation())
                                    })
-                deltaRegionsData[target].append(xend-xstart)    
+                deltaRegionsData[target.getNameWithRegion()].append(xend-xstart)    
             targetNumber += 1
         df = pd.DataFrame(regionsData) 
-        hoverData = {"Target region name":False, "Target ID":True, "Target number":False, "Target region":True, "Sirnas in block":False, "Total sirnas":False,"Query start":False,"Query end":False}
+        print(df)
+        hoverData = {"Target region name":False, "Target ID":True, "Target number":False, "Target region":True if self.targetsInRegions else False, "Sirnas in block":False, "Total sirnas":False,"Query start":False,"Query end":False, "Annotation":True}
         hoverName = None
         if mode=="bowtie":
-            hoverData={"Target region name":False, "Target ID":False, "Target number":True, "Target region":True if self.targetsInRegions else False, "Sirnas in block":True, "Total sirnas":True}
+            hoverData={"Target region name":False, "Target ID":False, "Target number":True, "Target region":True if self.targetsInRegions else False, "Sirnas in block":True, "Total sirnas":True, "Annotation":True}
             hoverName = "Target ID"
 
-        fig = px.timeline(df, x_start="Query start", x_end="Query end", y="Target region name", color="Target ID", hover_name=hoverName, hover_data=hoverData)#,color_discrete_map=colorByTarget)
+        fig = px.timeline(df, x_start="Query start", x_end="Query end", y="Target region name", color="Target ID", hover_name=hoverName, hover_data=hoverData)
         fig.layout.xaxis.type = 'linear'
         for figData in fig.data:
             xData = []
             yNamePre = None
+            pos = 0
             for yName in figData.y:
                 if yName != yNamePre:
                     yNamePre = yName
@@ -318,13 +323,15 @@ class SifiPipeline:
             sirna = self.sirnaData[sirnaName]
             if sirna.bowtieDataTuple():
                 for alignment in sirna.bowtieDataTuple():
-                    hitName = alignment[0]
-                    offTarget = hitName not in self.mainTargets
+                    hitTarget = alignment[0]
+                    offTarget = hitTarget not in self.mainTargets
                     sirnaDict = {"query_name": self.queryName, "sirna_position": sirnaName}
                     sirnaDict.update(sirna.toDict())
                     sirnaDict.update({"is_off_target": offTarget,
-                                      "hit_name": hitName, 
-                                      "reference_strand_pos": alignment[1],
+                                      "hit_name": hitTarget.getName(),
+                                      "hit_region":"-".join(map(str,hitTarget.getRegion())),
+                                      "hit_annotation":" | ".join(hitTarget.getAnnotation()),
+                                      "reference_pos": alignment[1],
                                       "strand": alignment[2], 
                                       "mismatches": alignment[3]})
                     self.jsonList.append(sirnaDict)
