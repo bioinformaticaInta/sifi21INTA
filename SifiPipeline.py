@@ -4,12 +4,8 @@ import subprocess
 from Bio import SeqIO
 import os
 import json
-from collections import Counter
-import plotly.graph_objects as go
 import plotly.express as px
-import plotly.figure_factory as pff
 import pandas as pd
-from datetime import datetime
 
 import sifi21INTA.generalFunctions as generalFunctions
 import sifi21INTA.Sirna as Sirna
@@ -144,7 +140,7 @@ class SifiPipeline:
             self.loadBowtieData(bowtieFile)
 
     def loadBowtieData(self, bowtieFileName):
-        #Load list with all alignments information contains: [sirnaName, hitName, hitPos, hitStrand, hitMissmatches]
+        #Load list with all alignments information contains: [sirnaName, hitTarget, hitPos, hitStrand, hitMissmatches]
         bowtieAlignments, targetsRegions = generalFunctions.bowtieToList(bowtieFileName)
         #Take the targets per regions defined with alignment overlaps
         if self.targetsInRegions:
@@ -217,6 +213,7 @@ class SifiPipeline:
         allTargetsNumbers = {}
         if self.allTargets:
             posX,effCount,allRegions = self.informationForFigure()
+
             allTargetsNumbers,fig = self.paintTargetRegions(allRegions, "bowtie")
         
             fig.update_layout(
@@ -242,27 +239,33 @@ class SifiPipeline:
         offRegions = {}
         
         for sirnaName in sorted(self.sirnaData.keys()):
-            startPos = sirnaName-1
-            endPos = startPos + (self.sirnaSize-1)
+            startQueryPos = sirnaName-1
+            endQuery = startQueryPos + (self.sirnaSize-1)
             sirna = self.sirnaData[sirnaName]
             if sirna.getEfficiency():
-                for sirnaPos in range(startPos, endPos):
+                for sirnaPos in range(startQueryPos, endQuery):
                     effCount[sirnaPos]+=1
             #Obtain offTargets:
             #   Transcriptome reference -> Transcripts
             #   Genome reference -> Chromosome regions
             offTargets = sirna.getOffTargets(self.mainTargets)
-            for offTarget in offTargets:
-                start = startPos
+            for offTarget,posInOffTarget,strandInOffTarget,missmtcInOffTarget in offTargets:
+                startQuery = startQueryPos
+                startTarget = posInOffTarget
+                endTarget = startTarget + (self.sirnaSize-1)
                 count = 1
                 if offTarget in offRegions:
-                    if startPos <= offRegions[offTarget][-1][1]:
+                    if startQueryPos <= offRegions[offTarget][-1][1]:
                         lastRegion = offRegions[offTarget].pop()
-                        start = lastRegion[0]-1
-                        count = lastRegion[2]+1
+                        startQuery = lastRegion[0]-1
+                        count = lastRegion[4]+1
+                        if strandInOffTarget == "-": 
+                            endTarget = lastRegion[3]
+                        else:
+                            startTarget = lastRegion[2]
                 else:
                     offRegions[offTarget] = []
-                offRegions[offTarget].append((start+1 , endPos+1, count))
+                offRegions[offTarget].append((startQuery+1 , endQuery+1, startTarget, endTarget, count, strandInOffTarget))
         return posX,effCount,offRegions 
 
     def paintTargetRegions(self, regions, mode="bowtie"):
@@ -274,26 +277,30 @@ class SifiPipeline:
         for target in regions:
             targetNumbers[str(targetNumber)] = target 
             deltaRegionsData[target.getNameWithRegion()] = []
-            for xstart,xend,count in regions[target]:
+            for qstart,qend,tstart,tend,count,strand in regions[target]:
                 regionsData.append({"Target region name":target.getNameWithRegion(), 
-                                    "Query start":xstart, "Query end":xend, 
+                                    "Target number":targetNumber,
+                                    "Start position in query":qstart, "End position in query":qend, 
                                     "Target ID":target.getName(), 
                                     "Target region":"-".join(map(str,target.getRegion())),
-                                    "Sirnas in block":count,
-                                    "Total sirnas":self.allTargets[target],
-                                    "Target number":targetNumber,
-                                    "Annotation":"<br>".join(target.getAnnotation())
+                                    "Target length":target.getLength(),
+                                    "Target strand":strand,
+                                    "Start block position in target":tstart,
+                                    "End block position in target":tend,
+                                    "Number of sirnas in block":count,
+                                    "Total sirnas in target":self.allTargets[target],
+                                    "Target annotation":"<br>".join(target.getAnnotation())
                                    })
-                deltaRegionsData[target.getNameWithRegion()].append(xend-xstart)    
+                deltaRegionsData[target.getNameWithRegion()].append(qend-qstart)    
             targetNumber += 1
         df = pd.DataFrame(regionsData) 
-        hoverData = {"Target region name":False, "Target ID":True, "Target number":False, "Target region":True if self.targetsInRegions else False, "Sirnas in block":False, "Total sirnas":False,"Query start":False,"Query end":False, "Annotation":True}
+        hoverData = {"Target region name":False, "Target ID":True, "Target number":False, "Target region":True if self.targetsInRegions else False, "Target length":False, "Target strand":False, "Start block position in target":False, "End block position in target":False, "Number of sirnas in block":False, "Total sirnas in target":False, "Start position in query":False,"End position in query":False, "Target annotation":True if self.gffFile else False}
         hoverName = None
         if mode=="bowtie":
-            hoverData={"Target region name":False, "Target ID":False, "Target number":True, "Target region":True if self.targetsInRegions else False, "Sirnas in block":True, "Total sirnas":True, "Annotation":True}
+            hoverData = {"Target region name":False, "Target ID":False, "Target number":True, "Target region":True if self.targetsInRegions else False, "Target length":True if self.targetsInRegions or self.gffFile else False, "Target strand":True, "Start block position in target":True, "End block position in target":True, "Number of sirnas in block":True, "Total sirnas in target":True, "Target annotation":True if self.gffFile else False}
             hoverName = "Target ID"
 
-        fig = px.timeline(df, x_start="Query start", x_end="Query end", y="Target region name", color="Target ID", hover_name=hoverName, hover_data=hoverData)
+        fig = px.timeline(df, x_start="Start position in query", x_end="End position in query", y="Target region name", color="Target ID", hover_name=hoverName, hover_data=hoverData)
         fig.layout.xaxis.type = 'linear'
         for figData in fig.data:
             xData = []
