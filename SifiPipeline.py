@@ -287,7 +287,6 @@ class SifiPipeline:
                 deltaRegionsData[target.getNameWithRegion()].append(xend-xstart)    
             targetNumber += 1
         df = pd.DataFrame(regionsData) 
-        print(df)
         hoverData = {"Target region name":False, "Target ID":True, "Target number":False, "Target region":True if self.targetsInRegions else False, "Sirnas in block":False, "Total sirnas":False,"Query start":False,"Query end":False, "Annotation":True}
         hoverName = None
         if mode=="bowtie":

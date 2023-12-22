@@ -8,7 +8,7 @@ class TargetSequence:
         self.annotation = []
    
     def __repr__(self):
-        return '< ' + ' | '.join(["name="+self.name,"Region="+str(self.startRegion)+"-"+str(self.endRegion),"Anotation="+str(self.annotation)]) + ' >'
+        return '< ' + ' | '.join(["ID="+self.name,"Region="+str(self.startRegion)+"-"+str(self.endRegion),"Annotation="+str(self.annotation)]) + ' >'
     
     def __eq__(ts1, ts2):
         return ts1.name==ts2.name and ts1.startRegion==ts2.startRegion and ts1.endRegion==ts2.endRegion
