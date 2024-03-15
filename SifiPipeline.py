@@ -3,6 +3,7 @@
 import subprocess
 from Bio import SeqIO
 import os
+import shutil
 import json
 import plotly.express as px
 import pandas as pd
@@ -26,8 +27,6 @@ class SifiPipeline:
         self.tsAccessibilityTreshold = targetSiteAccessibilityTreshold          # Target site accessibility threshold
         self.terminalCheck = terminalCheck
 
-        self.rnaplfoldLocation = "/usr/local/bin"                               # Rnaplfold path
-        self.bowtieLocation = "/usr/bin"                                        # Bowtie path
         self.bowtieDB = bowtieDB                                                # Bowtie DB complete path
         self.allTargets = {}
         self.mainTargets = []
@@ -61,7 +60,6 @@ class SifiPipeline:
 
     def refGenomeLenghts(self, refGenome):
         if refGenome:
-            os.chdir(self.bowtieLocation)
             process = subprocess.Popen(["bowtie-inspect", "-s", self.bowtieDB], stdout=subprocess.PIPE)
             out,err = process.communicate()
             if not process.returncode:
@@ -98,42 +96,94 @@ class SifiPipeline:
 
     def designPipeline(self):
         # Run BOWTIE against DB
+        print()
+        print("#####################################################")
+        print("Step 1: Run BOWTIE alignment")
+        print("Selected Database: "+self.bowtieDB)
+        print("Query file: "+self.queryFile)
+        print("#####################################################")
+        print()
         self.runBowtie()
 
         # Select main targets
+        print()
+        print("#####################################################")
+        print("Step 2: Select main target for siRNAs prediction")
+        print("#####################################################")
+        print()
         self.selectMainTargets()
-        
+        print("Main target selected:",self.mainTargets)
+        print()
+
         # Run RNAplfold
+        print()
+        print("#####################################################")
+        print("Step 3: Calculate efficiency")
+        print("Using default method and parameters")
+        print("#####################################################")
+        print()
         self.runRnaplfold()
         self.calculateAllSirnasEfficiency()
         
+        print()
+        print("#####################################################")
+        print("Step 4: Results")
+        print("#####################################################")
+        print()
+        
         # Load results to JSON format
         self.createJsonFile()
+        print("Created JSON output file: " + self.jsonFileName)
+        print()
         
-        print("Main target name:",self.mainTargets)
-        
+        print("Summary table:")
         resultTuple = self.getResultSummary()
         self.printResultTable(resultTuple)
+        print()
 
-        self.efficiencyFigure()
+        figureName = self.efficiencyFigure()
+        print("Efficiency figure created: " + figureName)
+        print()
 
     def offTargetPipeline(self):
         # Run BOWTIE against DB
+        print()
+        print("#####################################################")
+        print("Step 1: Run BOWTIE alignment")
+        print("Selected Database: "+self.bowtieDB)
+        print("Query file: "+self.queryFile)
+        print("#####################################################")
+        print()
         self.runBowtie()
 
         #Plot alignments figure
-        self.bowtieFigure()
+        allTargetsNumbers,figureName = self.bowtieFigure()
+        print()
+        print("#####################################################")
+        print("Step 2: Plot alignments figure")
+        print("Alignment figure created: " + figureName)
+        print("#####################################################")
+        print()
 
+        print()
+        print("#####################################################")
+        print("Step 3: Results")
+        print("#####################################################")
+        print()
+        
         # Load results to JSON format
         self.createJsonFile()
-
+        print("Created JSON output file: " + self.jsonFileName)
+        print()
+        
+        print("Summary table:")
         resultTuple = self.getResultSummary()
         self.printResultTable(resultTuple)
+        print()
 
     def runBowtie(self):
         """Run BOWTIE alignment."""
         bowtieFile = self.outputDir+"/"+self.queryName+".bowtiehit"
-        os.chdir(self.bowtieLocation)
         process = subprocess.Popen(["bowtie", "-a", "-v", str(self.mismatches),  "-y", "-x", self.bowtieDB, "-f", self.sirnaFastaFile, bowtieFile])
         process.wait()
         if os.path.exists(bowtieFile):
@@ -164,7 +214,6 @@ class SifiPipeline:
                 countedSirnas.add((sirnaName,hitTarget))
 
     def runRnaplfold(self):
-        os.chdir(self.rnaplfoldLocation)
         seq = open(self.queryFile, 'r').read()
         cwd = self.outputDir+"/"+self.queryName+"_RNAplfold"
         os.mkdir(cwd)
@@ -177,7 +226,8 @@ class SifiPipeline:
         lunpFileName = cwd + '/' + self.queryName + '_lunp'
         if os.path.exists(lunpFileName):
             self.loadRnaplfoldData(lunpFileName)
-        
+        shutil.rmtree(cwd) 
+
     def loadRnaplfoldData(self, lunpFileName):
         lunpFile = open(lunpFileName)
         for lunpLine in lunpFile:
@@ -199,9 +249,9 @@ class SifiPipeline:
 
     def selectMainTargets(self):
         if self.allTargets:
-            allTargetsNumbers = self.bowtieFigure()
+            allTargetsNumbers,figureName = self.bowtieFigure()
             if self.mode == 0:
-                mainTargetNumbers = input("Select main targets (comma separated): ").split(",")
+                mainTargetNumbers = input("Select main targets observing the figure: "+ figureName +" (insert several numbers comma separated): ").split(",")
                 for mainTargetNumber in mainTargetNumbers:
                     if mainTargetNumber in allTargetsNumbers:
                         self.mainTargets.append(allTargetsNumbers[mainTargetNumber])
@@ -225,9 +275,10 @@ class SifiPipeline:
                 xaxis_tickangle=45,  # Set the x-axis label angle
                 showlegend=True,     # Display the legend
             )
-            fig.write_html(self.outputDir+"/"+self.queryName+"_mainTargets_selection_plot.html")
+            figureName = self.outputDir+"/"+self.queryName+"_mainTargets_selection_plot.html"
+            fig.write_html(figureName)
 
-        return allTargetsNumbers
+        return allTargetsNumbers,figureName
 
     def informationForFigure(self):
         #Return three variables:
@@ -336,6 +387,7 @@ class SifiPipeline:
         self.dataToJson()
         json.dump(self.jsonList, jsonFile, indent=4)
         jsonFile.close()
+        return self.jsonFileName
     
     def dataToJson(self):
         #Extracts the data from bowtie results and efficiency and put everything into json format.
@@ -410,4 +462,7 @@ class SifiPipeline:
             showlegend = True,
             legend_title_text=''
         )
-        fig.write_html(self.outputDir+"/"+self.queryName+"_efficiency_plot.html")
+        figureName = self.outputDir+"/"+self.queryName+"_efficiency_plot.html"
+        fig.write_html(figureName)
+
+        return figureName
