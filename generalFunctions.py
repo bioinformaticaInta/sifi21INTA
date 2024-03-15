@@ -1,7 +1,8 @@
 #!/usr/bin/python
 
 from BCBio import GFF
-
+from datetime import datetime
+import sys
 import sifi21INTA.TargetSequence as TargetSequence
 
 def bowtieToList(bowtieFileName):
@@ -23,7 +24,7 @@ def bowtieToList(bowtieFileName):
     return bowtieAlignments,targetsRegions
 
 def addTargetsRegions(bowtieAlignments, gapSize, xmer):
-    #The input is a list of lists containing: [sirna, hitTarget, hisPos, hitStrand, hitMissmatches]
+    #The input is a list of lists containing: [sirna, hitTarget, hitPos, hitStrand, hitMissmatches]
     targetsRegions = {}
     #Traversing ordered by hit positions assembling the regions shared between matches
     for alignment in sorted(bowtieAlignments, key =lambda x: x[2]):
@@ -68,11 +69,9 @@ def addAnnotations(gffFileName, bowtieAlignments, genomicRef, inRegions, targets
 
 def getGFFDataFromFile(gffFileName):
     gffFile = open(gffFileName)
-    gffData = []
-    for rec in GFF.parse(gffFile):
-        gffData.append(rec)
+    gffData = list(GFF.parse(gffFile))
     gffFile.close()
-    return gffData 
+    return gffData
 
 def addGenomicAnnotations(gffData, bowtieAlignments, targetsRegions):
     targetsAnnotations = {}
