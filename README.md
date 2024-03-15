@@ -19,7 +19,7 @@ For design:
 
 ```
 import sifi21INTA
-sifiDesign = sifi21INTA.SifiPipeline(bowtieDB="<complete_path>",queryFile="<complete_path>", outputDir="<complete_path>", mode=0)
+sifiDesign = sifi21INTA.SifiPipeline(bowtieDB="<DB index name>", queryFile="<Query file name>", outputDir="<directory name>", mode=0)
 sifiDesign.runPipeline()
 ```
 
@@ -27,6 +27,6 @@ For off target search:
 
 ```
 import sifi21INTA
-sifiOffTargets = sifi21INTA.SifiPipeline(bowtieDB="<complete_path>",queryFile="<complete_path>", outputDir="<complete_path>", mode=1)
+sifiOffTargets = sifi21INTA.SifiPipeline(bowtieDB="<DB index name>",queryFile="<Query file name>", outputDir="<directory name>", mode=1)
 sifiOffTargets.runPipeline()
 ```
