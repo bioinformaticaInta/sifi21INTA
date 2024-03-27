@@ -7,6 +7,7 @@ import shutil
 import json
 import plotly.express as px
 import pandas as pd
+import glob
 
 import sifi21INTA.generalFunctions as generalFunctions
 import sifi21INTA.Sirna as Sirna
@@ -27,18 +28,17 @@ class SifiPipeline:
         self.tsAccessibilityTreshold = targetSiteAccessibilityTreshold          # Target site accessibility threshold
         self.terminalCheck = terminalCheck
 
-        self.bowtieDB = bowtieDB                                                # Bowtie DB complete path
+        self.bowtieDB = bowtieDB                                                # Bowtie DB path
         self.allTargets = {}
         self.mainTargets = []
-        self.genomeLenghts = {}                                                 # Dictionary with genome information (name:len)
         
         self.outputDir = outputDir                                              # Outpur directory path
-        self.queryFile = queryFile                                              # Query sequence in single fasta format complete path
+        self.queryFile = queryFile                                              # Query sequence in single fasta format path
         query = tuple(SeqIO.parse(queryFile, "fasta"))[0]
         self.queryName = str(query.id).replace(" ","_")
         self.querySequence = str(query.seq)
         
-        self.gffFile = gffFile                                                  # GFF annotation file complete path
+        self.gffFile = gffFile                                                  # GFF annotation file path
         self.genomicReference = genomicReference                                # True if the reference is a genome
         self.targetsInRegions = targetsInRegions                                # True to take targets separated by regions
         self.maxGapSize = maxGapSize                                            # Maximum number of gap to join 2 regions
@@ -58,19 +58,6 @@ class SifiPipeline:
         self.overhang = 2                                                       # siRNA overhang
         self.endNucleotides = 3                                                 # siRNA end nucleotides
 
-    def refGenomeLenghts(self, refGenome):
-        if refGenome:
-            process = subprocess.Popen(["bowtie-inspect", "-s", self.bowtieDB], stdout=subprocess.PIPE)
-            out,err = process.communicate()
-            if not process.returncode:
-                out = str(out)
-                for line in out.split('\\n'):
-                    if "Sequence" in line:
-                        line = line.split('\\t')
-                        self.genomeLenghts[line[1].split(" ")[0]] = int(line[2])
-            else:
-                raise Exception("Error obtaining genome information")
-
     def runPipeline(self):
         # Create all siRNAs of size "sirna_size" and save them into multifasta and tab files
         self.createSirnas()
@@ -78,21 +65,6 @@ class SifiPipeline:
             self.designPipeline()
         else:
             self.offTargetPipeline()
-
-    def createSirnas(self):
-        #Create all siRNA's of size "self.sirnaSize" of a sequence.
-        # Slice over sequence and split into xmers.
-        sirnaFastaFile = open(self.sirnaFastaFile, 'w')
-        start = self.startPosition
-        for start in range(start , len(self.querySequence)-self.sirnaSize+1):
-            sequence = self.querySequence[start:start+self.sirnaSize]
-            sequence.upper()
-            #Add Sirna object to self.sirnaData dict
-            self.sirnaData[start+1] = Sirna.Sirna(sequence)
-            #Write sirna sequence to multifasta file for bowtie
-            sirnaFastaFile.write('>' + str(start+1) + '\n')
-            sirnaFastaFile.write(sequence + '\n')
-        sirnaFastaFile.close()
 
     def designPipeline(self):
         # Run BOWTIE against DB
@@ -181,6 +153,21 @@ class SifiPipeline:
         self.printResultTable(resultTuple)
         print()
 
+    def createSirnas(self):
+        #Create all siRNA's of size "self.sirnaSize" of a sequence.
+        # Slice over sequence and split into xmers.
+        sirnaFastaFile = open(self.sirnaFastaFile, 'w')
+        start = self.startPosition
+        for start in range(start , len(self.querySequence)-self.sirnaSize+1):
+            sequence = self.querySequence[start:start+self.sirnaSize]
+            sequence.upper()
+            #Add Sirna object to self.sirnaData dict
+            self.sirnaData[start+1] = Sirna.Sirna(sequence)
+            #Write sirna sequence to multifasta file for bowtie
+            sirnaFastaFile.write('>' + str(start+1) + '\n')
+            sirnaFastaFile.write(sequence + '\n')
+        sirnaFastaFile.close()
+
     def runBowtie(self):
         """Run BOWTIE alignment."""
         bowtieFile = self.outputDir+"/"+self.queryName+".bowtiehit"
@@ -223,10 +210,10 @@ class SifiPipeline:
         prc.stdin.write('\n'.encode('utf-8'))
         prc.communicate()
 
-        lunpFileName = cwd + '/' + self.queryName + '_lunp'
-        if os.path.exists(lunpFileName):
-            self.loadRnaplfoldData(lunpFileName)
-        shutil.rmtree(cwd) 
+        lunpFileName = glob.glob(cwd+'/*lunp')
+        if lunpFileName:
+            self.loadRnaplfoldData(lunpFileName[0])
+        shutil.rmtree(cwd)
 
     def loadRnaplfoldData(self, lunpFileName):
         lunpFile = open(lunpFileName)
@@ -277,9 +264,34 @@ class SifiPipeline:
             )
             figureName = self.outputDir+"/"+self.queryName+"_mainTargets_selection_plot.html"
             fig.write_html(figureName)
-
         return allTargetsNumbers,figureName
 
+    def efficiencyFigure(self):
+        posX,effCount,offRegions = self.informationForFigure()
+        #Add (0,0) initial point to correct figure error when the initial
+        #y value is distinct on zero
+        posX = [0]+posX
+        effCount = [0]+effCount
+        if offRegions:
+            targetNumbers, fig = self.paintTargetRegions(offRegions, "efficiency")
+            fig.add_scatter(x=posX, y=effCount, line_shape='hv', name="Efficient siRNAs", hovertemplate='Query position: %{x}<br>Number of efficient siRNAs: %{y}')
+        else:
+            df = pd.DataFrame({"Query position":posX , "Number of efficient siRNAs":effCount})
+            fig = px.line(df, x="Query position", y="Number of efficient siRNAs", line_shape='hv')#, name="Efficient siRNAs")
+        
+        fig.update_layout(
+            title='siRNAs efficients per target position', # Title
+            xaxis_title='Query position', # x-axis name
+            yaxis_title='Number of efficient siRNAs', # y-axis name
+            xaxis_tickangle=45,  # Set the x-axis label angle
+            hovermode="x unified",
+            showlegend = True,
+            legend_title_text=''
+        )
+        figureName = self.outputDir+"/"+self.queryName+"_efficiency_plot.html"
+        fig.write_html(figureName)
+        return figureName
+    
     def informationForFigure(self):
         #Return three variables:
         #   posX -> List with positions in a target sequence (X axis)
@@ -367,6 +379,7 @@ class SifiPipeline:
 
         fig = px.timeline(df, x_start="Start position in query", x_end="End position in query", y="Target region name", color="Target ID", hover_name=hoverName, hover_data=hoverData)
         fig.layout.xaxis.type = 'linear'
+        #Modify x-labels to linear
         for figData in fig.data:
             xData = []
             yNamePre = None
@@ -440,29 +453,3 @@ class SifiPipeline:
         print("|  %s   |             %s            |    %s      |               %s               |" % (resultTuple))
         print("|---------------------------------------------------------------------------------|")
 
-    def efficiencyFigure(self):
-        posX,effCount,offRegions = self.informationForFigure()
-        #Add (0,0) initial point to correct figure error when the initial
-        #y value is distinct on zero
-        posX = [0]+posX
-        effCount = [0]+effCount
-        if offRegions:
-            targetNumbers, fig = self.paintTargetRegions(offRegions, "efficiency")
-            fig.add_scatter(x=posX, y=effCount, line_shape='hv', name="Efficient siRNAs", hovertemplate='Query position: %{x}<br>Number of efficient siRNAs: %{y}')
-        else:
-            df = pd.DataFrame({"Query position":posX , "Number of efficient siRNAs":effCount})
-            fig = px.line(df, x="Query position", y="Number of efficient siRNAs", line_shape='hv')#, name="Efficient siRNAs")
-        
-        fig.update_layout(
-            title='siRNAs efficients per target position', # Title
-            xaxis_title='Query position', # x-axis name
-            yaxis_title='Number of efficient siRNAs', # y-axis name
-            xaxis_tickangle=45,  # Set the x-axis label angle
-            hovermode="x unified",
-            showlegend = True,
-            legend_title_text=''
-        )
-        figureName = self.outputDir+"/"+self.queryName+"_efficiency_plot.html"
-        fig.write_html(figureName)
-
-        return figureName
